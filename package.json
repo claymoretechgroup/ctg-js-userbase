@@ -1,0 +1,30 @@
+{
+    "name": "ctg-js-userbase",
+    "version": "0.1.0",
+    "description": "Reusable JS client layer for the CTG userbase API: session client, operation categories, and React presentation",
+    "type": "module",
+    "exports": {
+        ".": "./index.js"
+    },
+    "scripts": {
+        "test": "vitest run",
+        "test:api": "vitest run tests/api",
+        "test:react": "vitest run tests/react"
+    },
+    "peerDependencies": {
+        "react": ">=18"
+    },
+    "peerDependenciesMeta": {
+        "react": {
+            "optional": true
+        }
+    },
+    "devDependencies": {
+        "ctg-js-test": "claymoretechgroup/ctg-js-test",
+        "ctg-react-test": "claymoretechgroup/ctg-react-test",
+        "jsdom": "^25.0.0",
+        "react": "^18.3.0",
+        "react-dom": "^18.3.0",
+        "vitest": "^4.1.10"
+    }
+}
