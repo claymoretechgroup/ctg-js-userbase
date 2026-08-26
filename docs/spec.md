@@ -30,7 +30,6 @@
 | `useUserbase` | `useUserbase` | `src/react/useUserbase.js` | 1 | React hook. |
 | `usePermission` | `usePermission` | `src/react/usePermission.js` | 1 | React hook. |
 | `useOperation` | `useOperation` | `src/react/useOperation.js` | 1 | React hook. |
-| `OperationSelection<Args, Result>` | plain object | React-facing value | 1 | `{ group, operation }`, where `group` is an operation-group class and `operation` is a property name. |
 | Vite workbench | application files | `app/` | 1-5 | Lighter bar, no design document; grows by phase. |
 
 > **Ruled — the client class is `CTGUserClient`:** the CTG class prefix applies, and the holder is named for the user whose session it manages. Supersedes the earlier recorded intended name. Category factories and the six React presentation names stay unprefixed: the factories are the design's own application notation, and hook names must begin with `use`.
@@ -41,7 +40,7 @@
 
 > **Judgment Call — production bindings named `FetchTransport` and `DateClock`:** Core declares `Transport` and `Clock` but leaves production names to this spec. These names state the platform binding plainly and keep the declared operations constructor-supplied rather than hidden inside `CTGUserClient`.
 
-> **Judgment Call — `OperationSelection` as `{ group, operation }`:** Presentation needs to identify one operation without making the application write category application inside render code. A pair of operation-group class and operation property name is sufficient for built-in and application-defined groups, and it keeps the same application form for both.
+> **Ruled — `useOperation` takes the operation directly; `OperationSelection` is deleted:** the hook is a pure asynchronous state machine over any promise-returning operation. The application constructs operation groups itself (`Authentication.init(client)`) and hands the hook a bound operation. The selection indirection existed to hide application forms from render code; with class construction being one line, it duplicated the application mechanism and is removed. Because the hook no longer reads the provider's client, it no longer requires an enclosing provider.
 
 ---
 
@@ -381,12 +380,7 @@ TYPE :: UserbaseExposure => {
     authenticated: bool
 }
 
-TYPE :: OperationGroupClass => CLASS whose CONSTRUCTOR accepts CTGUserClient
-
-TYPE :: OperationSelection<Args, Result> => {
-    group:     OperationGroupClass,
-    operation: string
-}
+TYPE :: Operation<Args, Result> => (Args) -> PROMISE<Result>
 
 TYPE :: OperationHandle<Args, Result> => {
     run:     (Args) -> PROMISE<VOID>,
@@ -403,7 +397,7 @@ TYPE :: OperationHandle<Args, Result> => {
 | `RequirePermission` | component | `({ permission: string, target_group_ids?: [integer], children: Content, fallback?: Content }) -> RenderedContent` | 1 |
 | `useUserbase` | hook | `(VOID) -> UserbaseExposure` | 1 |
 | `usePermission` | hook | `(string, [integer]?) -> bool` | 1 |
-| `useOperation` | hook | `(OperationSelection<Args, Result>) -> OperationHandle<Args, Result>` | 1 |
+| `useOperation` | hook | `(Operation<Args, Result>) -> OperationHandle<Args, Result>` | 1 |
 
 > **Judgment Call — React content prop is `children`:** The design uses `content` as rendering-runtime-neutral notation. In React, the concrete slot is `children`, while behavior remains the design behavior.
 
@@ -413,7 +407,7 @@ TYPE :: OperationHandle<Args, Result> => {
 
 `usePermission(permission, target_group_ids?)` obtains `Authorization()` and evaluates against the current session's claims. Without target groups it uses `hasPermission`; with target groups it uses `hasPermissionOver`. Used outside a provider, it throws `CONFIGURATION_INVALID` with `details: { field: "provider" }`.
 
-`useOperation(selection)` constructs `selection.group` over the provider's client internally (`selection.group.init(client)`) and runs the selected operation. Before any run, `pending` is false and `result` and `error` are null. During a run, `pending` is true, `error` is null, and `result` keeps its previous value. On success, `pending` is false, `result` is the value, and `error` is null. On failure, `pending` is false, `error` is the `ClientError`, and `result` is unchanged. The asynchronous result returned by `run` never rejects; it settles after exposed state has been updated. If two runs overlap, the later run's outcome is exposed and any older late-settling outcome is discarded. A stopped render receives no exposed state change. Used outside a provider, it throws `CONFIGURATION_INVALID` with `details: { field: "provider" }`.
+`useOperation(operation)` takes a promise-returning operation the application supplies — typically one bound from a constructed operation group (`const auth = Authentication.init(client)`), but any operation returning a PROMISE qualifies. A non-function argument throws `CONFIGURATION_INVALID` with `details: { field: "operation" }` when the hook is applied. Before any run, `pending` is false and `result` and `error` are null. During a run, `pending` is true, `error` is null, and `result` keeps its previous value. On success, `pending` is false, `result` is the value, and `error` is null. On failure, `pending` is false, `error` is the `ClientError`, and `result` is unchanged. The asynchronous result returned by `run` never rejects; it settles after exposed state has been updated. If two runs overlap, the later run's outcome is exposed and any older late-settling outcome is discarded. A stopped render receives no exposed state change. `useOperation` reads no provider context and does not require an enclosing provider.
 
 `RequireSession` renders children while authenticated is true, otherwise fallback or nothing, and performs no request. `RequirePermission` renders children when `usePermission` is true, otherwise fallback or nothing. Hiding content is advisory; service refusal remains independent.
 
@@ -688,8 +682,8 @@ useUserbase()
 // HOOK :: STRING, [INT]? -> BOOL
 usePermission(permission, targetGroupIds)
 
-// HOOK :: OperationSelection<Args, Result> -> OperationHandle<Args, Result>
-useOperation(selection)
+// HOOK :: Operation<Args, Result> -> OperationHandle<Args, Result>
+useOperation(operation)
 ```
 
 ---
@@ -809,7 +803,7 @@ The client validates construction and presentation context only. It does not val
 | application-defined service operation groups | class whose constructor accepts `CTGUserClient`, using `client.request` | 1 |
 | custom transport | object with `send(Request) -> PROMISE<Response>` supplied to constructor | 1 |
 | custom clock | object with `now() -> timestamp` supplied to constructor | 1 |
-| React operation execution | `OperationSelection` may name application-defined operation groups | 1 |
+| React operation execution | `useOperation` accepts any promise-returning operation, including application-defined group operations | 1 |
 | application screens | `app/` workbench and application code compose the public surface | 1-5 |
 
 Extensions do not mutate session state except through Authentication operations and renewal. They do not read or store the refresh credential. They do not add methods to `CTGUserClient` by subclassing.
@@ -822,7 +816,7 @@ Extensions do not mutate session state except through Authentication operations 
 2. **Operation groups as classes** (§1) — ruled by the user: constructor accepts the client, static `init` factory; same-session double application and app-group symmetry hold; supersedes the drafted factory-function call.
 3. **Authorization as a class** (§1) — nullary constructor plus `init()`; standalone and client-free; extends the Q2 ruling for idiom consistency.
 4. **Production bindings named `FetchTransport` and `DateClock`** (§1) — names the browser HTTP and `Date` clock bindings without hiding declared operations in the client.
-5. **`OperationSelection` as `{ group, operation }`** (§1) — identifies one operation for React without forcing category application in render code and supports application-defined groups.
+5. **`useOperation` takes the operation directly** (§1) — ruled by the user; `OperationSelection` deleted; the hook is a pure async state machine and needs no provider.
 6. **React content prop is `children`** (§2.10) — binds the design's runtime-neutral `content` slot to idiomatic React.
 
 ---
@@ -845,9 +839,9 @@ No. `Authorization()` is standalone. React presentation may pair it with the cur
 
 Production bindings are `src/core/transports/FetchTransport.js` and `src/core/clocks/DateClock.js`. Test doubles are `tests/support/ScriptedTransport.js` and `tests/support/FixedClock.js`.
 
-### Q5: What is the concrete operation-selection value?
+### Q5: What does `useOperation` take?
 
-`OperationSelection<Args, Result>` is `{ group, operation }`, where `group` is an operation-group class (constructor accepting `CTGUserClient`) and `operation` is the operation property name to run.
+Ruled: the operation itself — any promise-returning function, typically bound from a constructed operation group. There is no selection value; `OperationSelection` was deleted with the ruling.
 
 ### Q6: Which suite proves renewal?
 
@@ -863,14 +857,12 @@ Scripted renewal logic is in `tests/api`. Cookie-credentialed renewal is same-si
    - Operation groups as classes (ruled).
    - Authorization as a factory function.
    - Production bindings named `FetchTransport` and `DateClock`.
-   - `OperationSelection` as `{ group, operation }`.
+   - `useOperation` takes the operation directly (ruled; OperationSelection deleted).
    - React content prop is `children`.
 3. Design gaps found:
    - Category application form was intentionally left to the language specification.
    - Production binding names and module paths for `Transport` and `Clock` were intentionally left to the language specification.
-   - Concrete `OperationSelection` representation was intentionally left to the language specification.
    - React prop naming for the content slot was not fixed by the rendering-runtime-neutral presentation design.
-   - Invalid `OperationSelection` behavior is not stated; this spec only specifies valid selections and leaves invalid-selection behavior open.
 4. Class-name table:
 
 | Design structure | JS class/function name |
@@ -893,4 +885,4 @@ Scripted renewal logic is in `tests/api`. Cookie-credentialed renewal is same-si
 | fixed clock test double | `FixedClock` |
 
 5. Could not specify:
-   - Invalid `OperationSelection` handling, because no design document states the required failure type or timing.
+   - (resolved by ruling) invalid input to `useOperation` is a non-function argument: `CONFIGURATION_INVALID`, `details.field: "operation"`, at hook application.
