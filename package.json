@@ -20,6 +20,7 @@
         }
     },
     "devDependencies": {
+        "@testing-library/user-event": "^14.6.6",
         "ctg-js-test": "claymoretechgroup/ctg-js-test",
         "ctg-react-test": "claymoretechgroup/ctg-react-test",
         "jsdom": "^25.0.0",
