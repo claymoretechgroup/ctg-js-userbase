@@ -12,7 +12,7 @@
 
 | Design Structure | JS Realization | Module | Phase | Notes |
 |---|---|---|---:|---|
-| `client` | `SessionClient` | `src/core/SessionClient.js` | 1 | Zero-dependency ES module class. |
+| `client` | `CTGUserClient` | `src/core/CTGUserClient.js` | 1 | Zero-dependency ES module class. |
 | `ClientError` | `ClientError` | `src/core/ClientError.js` | 1 | Extends `Error`; accepts type name or integer code. |
 | `Transport` | supplied object with `send` | construction value | 1 | Declared operation structure. |
 | `Clock` | supplied object with `now` | construction value | 1 | Declared operation structure. |
@@ -33,13 +33,13 @@
 | `OperationSelection<Args, Result>` | plain object | React-facing value | 1 | `{ group, operation }`, where `group` is an operation-group factory and `operation` is a property name. |
 | Vite workbench | application files | `app/` | 1-5 | Lighter bar, no design document; grows by phase. |
 
-> **Judgment Call — `SessionClient` without `CTG` prefix:** The recorded intended name is `SessionClient`, and this spec binds that name. CTG class-prefix convention, visible in names such as `CTGTest*`, argues for `CTGSessionClient`; this spec does not silently rename because the brief fixes `SessionClient`.
+> **Ruled — the client class is `CTGUserClient`:** the CTG class prefix applies, and the holder is named for the user whose session it manages. Supersedes the earlier recorded intended name. Category factories and the six React presentation names stay unprefixed: the factories are the design's own application notation, and hook names must begin with `use`.
 
-> **Judgment Call — operation groups as factory functions:** The design notation is `Authentication(client)`, and a factory function realizes that syntax directly. Each application returns a new operation structure closing over the supplied `SessionClient`, so same-session double application, client isolation, and application-defined operation group symmetry all hold without subclassing the client.
+> **Judgment Call — operation groups as factory functions:** The design notation is `Authentication(client)`, and a factory function realizes that syntax directly. Each application returns a new operation structure closing over the supplied `CTGUserClient`, so same-session double application, client isolation, and application-defined operation group symmetry all hold without subclassing the client.
 
 > **Judgment Call — Authorization also as a factory function:** Authorization is standalone and pure. `Authorization()` returns an operation structure with no client, transport, clock, or state. Keeping it in the same factory style as the service-backed groups preserves a single operation-structure idiom while still enforcing that Authorization is never a client property.
 
-> **Judgment Call — production bindings named `FetchTransport` and `DateClock`:** Core declares `Transport` and `Clock` but leaves production names to this spec. These names state the platform binding plainly and keep the declared operations constructor-supplied rather than hidden inside `SessionClient`.
+> **Judgment Call — production bindings named `FetchTransport` and `DateClock`:** Core declares `Transport` and `Clock` but leaves production names to this spec. These names state the platform binding plainly and keep the declared operations constructor-supplied rather than hidden inside `CTGUserClient`.
 
 > **Judgment Call — `OperationSelection` as `{ group, operation }`:** Presentation needs to identify one operation without making the application write category application inside render code. A pair of operation-group factory and operation property name is sufficient for built-in and application-defined groups, and it keeps the same application form for both.
 
@@ -54,7 +54,7 @@ Phase: all directories are declared now; files are implemented by their row phas
 ```
 src/
     core/
-        SessionClient.js
+        CTGUserClient.js
         ClientError.js
         Authentication.js
         AccountManagement.js
@@ -162,14 +162,14 @@ DECLARED :: Clock     => { now:  (VOID) -> timestamp }
 
 `Authenticated.mfa_required` is the optional literal `false`. It is present on the completed `login` branch and absent on `verifyMFA` and `refresh` results.
 
-### 2.3 `SessionClient`
+### 2.3 `CTGUserClient`
 
 Phase: 1.
 
-`SessionClient` is the only client class. One instance holds one user's session against one service deployment.
+`CTGUserClient` is the only client class. One instance holds one user's session against one service deployment.
 
 ```
-CLASS :: SessionClient : (Config) => {
+CLASS :: CTGUserClient : (Config) => {
     request:         (HTTPMethod, string, MAP<string, value>?, MAP<string, value>?, Credential?) -> PROMISE<value | VOID>,
     session:         (VOID) -> SessionState,
     subscribe:       ((SessionState) -> VOID) -> ((VOID) -> VOID),
@@ -376,12 +376,12 @@ TYPE :: Content => React node
 TYPE :: RenderedContent => React rendered output
 
 TYPE :: UserbaseExposure => {
-    client:        SessionClient,
+    client:        CTGUserClient,
     session:       SessionState,
     authenticated: bool
 }
 
-TYPE :: OperationGroupFactory => SessionClient -> OBJECT
+TYPE :: OperationGroupFactory => CTGUserClient -> OBJECT
 
 TYPE :: OperationSelection<Args, Result> => {
     group:     OperationGroupFactory,
@@ -398,7 +398,7 @@ TYPE :: OperationHandle<Args, Result> => {
 
 | Structure | Form | Signature | Phase |
 |---|---|---|---:|
-| `UserbaseProvider` | component | `({ client: SessionClient, children: Content }) -> RenderedContent` | 1 |
+| `UserbaseProvider` | component | `({ client: CTGUserClient, children: Content }) -> RenderedContent` | 1 |
 | `RequireSession` | component | `({ children: Content, fallback?: Content }) -> RenderedContent` | 1 |
 | `RequirePermission` | component | `({ permission: string, target_group_ids?: [integer], children: Content, fallback?: Content }) -> RenderedContent` | 1 |
 | `useUserbase` | hook | `(VOID) -> UserbaseExposure` | 1 |
@@ -423,7 +423,7 @@ TYPE :: OperationHandle<Args, Result> => {
 
 All signatures use the HM-like notation from `ctg-project-proc/code-styles/js-code-style.md`. Tables above carry operation names; signatures here show concrete JS member names.
 
-### SessionClient
+### CTGUserClient
 
 ```javascript
 // CONSTRUCTOR :: Config -> this
@@ -501,7 +501,7 @@ set(timestamp)
 ### Authentication
 
 ```javascript
-// :: SessionClient -> OBJECT
+// :: CTGUserClient -> OBJECT
 Authentication(client)
 
 // :: { email: STRING, password: STRING, name?: STRING | NULL } -> PROMISE({ status: "verification_sent" })
@@ -532,7 +532,7 @@ resetPassword(args)
 ### AccountManagement
 
 ```javascript
-// :: SessionClient -> OBJECT
+// :: CTGUserClient -> OBJECT
 AccountManagement(client)
 
 // :: VOID -> PROMISE(Profile)
@@ -575,7 +575,7 @@ revokeOtherSessions()
 ### Administration
 
 ```javascript
-// :: SessionClient -> OBJECT
+// :: CTGUserClient -> OBJECT
 Administration(client)
 
 // :: { secret: STRING, email: STRING, password: STRING } -> PROMISE(Profile)
@@ -661,7 +661,7 @@ hasPermissionOver(claims, permission, targetGroupIds)
 ### React Presentation
 
 ```javascript
-// COMPONENT :: { client: SessionClient, children: Content } -> RenderedContent
+// COMPONENT :: { client: CTGUserClient, children: Content } -> RenderedContent
 UserbaseProvider(props)
 
 // COMPONENT :: { children: Content, fallback?: Content } -> RenderedContent
@@ -686,7 +686,7 @@ useOperation(selection)
 
 ### 4.1 Constructor and Export Policy
 
-Root `index.js` exports `SessionClient`, `ClientError`, `FetchTransport`, `DateClock`, `Authentication`, `AccountManagement`, `Administration`, `Authorization`, and the six React presentation structures. `ScriptedTransport` and `FixedClock` live under `tests/support` and are test support only.
+Root `index.js` exports `CTGUserClient`, `ClientError`, `FetchTransport`, `DateClock`, `Authentication`, `AccountManagement`, `Administration`, `Authorization`, and the six React presentation structures. `ScriptedTransport` and `FixedClock` live under `tests/support` and are test support only.
 
 Class files follow the JS code style: imports first, class purpose comment, `export default class ClassName`, `_` instance fields, static fields before instance fields, constructor before properties and methods, and `init` static factories only where applicable. Function modules export their factory as default and named export from the package root.
 
@@ -695,7 +695,7 @@ Class files follow the JS code style: imports first, class purpose comment, `exp
 Service-backed operation groups are not client properties. They are applied explicitly:
 
 ```javascript
-const client = new SessionClient({ base_url, transport, clock });
+const client = new CTGUserClient({ base_url, transport, clock });
 const auth = Authentication(client);
 const account = AccountManagement(client);
 const admin = Administration(client);
@@ -714,7 +714,7 @@ export default function Reports(client) {
 }
 ```
 
-Application-defined groups must target the same deployment and response convention because they use `SessionClient.request`.
+Application-defined groups must target the same deployment and response convention because they use `CTGUserClient.request`.
 
 ### 4.3 Response Classification
 
@@ -767,10 +767,10 @@ The client validates construction and presentation context only. It does not val
 | Anti-Pattern | Enforcement |
 |---|---|
 | refresh credential in JS | No property, operation, result, or error exposes it. |
-| persisted access token or claims | `SessionClient` starts empty and reads no store. |
+| persisted access token or claims | `CTGUserClient` starts empty and reads no store. |
 | proactive renewal | Only eligible 401 failures can start renewal. |
 | retry beyond one renewal replay | One renewal and one replay; replay result is final. |
-| renewal inside categories | Only `SessionClient.request` owns renewal. |
+| renewal inside categories | Only `CTGUserClient.request` owns renewal. |
 | wide client with category methods | Client surface is constructor, `request`, `session`, `subscribe`, `isSessionActive`. |
 | category structures as client properties | No `authentication`, `accountManagement`, `administration`, or `authorization` property exists. |
 | client subclassing for operations | Operation groups are factory functions over a client. |
@@ -787,19 +787,19 @@ The client validates construction and presentation context only. It does not val
 
 | Surface | Mechanism | Phase |
 |---|---|---:|
-| application-defined service operation groups | factory function `(SessionClient) -> OBJECT` using `client.request` | 1 |
+| application-defined service operation groups | factory function `(CTGUserClient) -> OBJECT` using `client.request` | 1 |
 | custom transport | object with `send(Request) -> PROMISE<Response>` supplied to constructor | 1 |
 | custom clock | object with `now() -> timestamp` supplied to constructor | 1 |
 | React operation execution | `OperationSelection` may name application-defined operation groups | 1 |
 | application screens | `app/` workbench and application code compose the public surface | 1-5 |
 
-Extensions do not mutate session state except through Authentication operations and renewal. They do not read or store the refresh credential. They do not add methods to `SessionClient` by subclassing.
+Extensions do not mutate session state except through Authentication operations and renewal. They do not read or store the refresh credential. They do not add methods to `CTGUserClient` by subclassing.
 
 ---
 
 ## 7. Judgment Calls Index
 
-1. **`SessionClient` without `CTG` prefix** (§1) — the brief fixes the recorded intended name; CTG prefix convention is flagged, not applied.
+1. **Client class named `CTGUserClient`** (§1) — ruled by the user; CTG prefix applied, holder named for the user; supersedes `SessionClient`.
 2. **Operation groups as factory functions** (§1) — directly realizes `Authentication(client)` and supports same-session double application and application-defined group symmetry.
 3. **Authorization as a factory function** (§1) — preserves operation-structure idiom while remaining standalone and client-free.
 4. **Production bindings named `FetchTransport` and `DateClock`** (§1) — names the browser HTTP and `Date` clock bindings without hiding declared operations in the client.
@@ -810,9 +810,9 @@ Extensions do not mutate session state except through Authentication operations 
 
 ## 8. Resolved Questions
 
-### Q1: Is `SessionClient` the class name?
+### Q1: Is `CTGUserClient` the class name?
 
-Yes. `SessionClient` is the JS class name for the design `client` structure.
+Yes — ruled. `CTGUserClient` is the JS class name for the design `client` structure, superseding the earlier recorded intended name `SessionClient`.
 
 ### Q2: Are operation categories classes?
 
@@ -828,7 +828,7 @@ Production bindings are `src/core/transports/FetchTransport.js` and `src/core/cl
 
 ### Q5: What is the concrete operation-selection value?
 
-`OperationSelection<Args, Result>` is `{ group, operation }`, where `group` is a function accepting `SessionClient` and returning an operation structure, and `operation` is the operation property name to run.
+`OperationSelection<Args, Result>` is `{ group, operation }`, where `group` is a function accepting `CTGUserClient` and returning an operation structure, and `operation` is the operation property name to run.
 
 ### Q6: Which suite proves renewal?
 
@@ -840,7 +840,7 @@ Scripted renewal logic is in `tests/api`. Cookie-credentialed renewal is same-si
 
 1. Line count: 877
 2. Judgment calls:
-   - `SessionClient` without `CTG` prefix.
+   - `CTGUserClient` without `CTG` prefix.
    - Operation groups as factory functions.
    - Authorization as a factory function.
    - Production bindings named `FetchTransport` and `DateClock`.
@@ -856,7 +856,7 @@ Scripted renewal logic is in `tests/api`. Cookie-credentialed renewal is same-si
 
 | Design structure | JS class/function name |
 |---|---|
-| `client` | `SessionClient` |
+| `client` | `CTGUserClient` |
 | `ClientError` | `ClientError` |
 | `Transport` production binding | `FetchTransport` |
 | `Clock` production binding | `DateClock` |
