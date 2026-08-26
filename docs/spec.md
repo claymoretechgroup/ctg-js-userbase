@@ -399,7 +399,7 @@ TYPE :: OperationHandle<Args, Result> => {
 | `usePermission` | hook | `(string, [integer]?) -> bool` | 1 |
 | `useOperation` | hook | `(Operation<Args, Result>) -> OperationHandle<Args, Result>` | 1 |
 
-> **Judgment Call — React content prop is `children`:** The design uses `content` as rendering-runtime-neutral notation. In React, the concrete slot is `children`, while behavior remains the design behavior.
+> **Ratified — React content prop is `children`:** The design uses `content` as rendering-runtime-neutral notation. In React, the concrete slot is `children`, while behavior remains the design behavior.
 
 `UserbaseProvider` renders children unchanged, supplies the nearest client and current session state, subscribes while rendered, unsubscribes when removed, and throws `CONFIGURATION_INVALID` with `details: { field: "client" }` when no client is supplied.
 
@@ -817,7 +817,7 @@ Extensions do not mutate session state except through Authentication operations 
 3. **Authorization as a class** (§1) — nullary constructor plus `init()`; standalone and client-free; extends the Q2 ruling for idiom consistency.
 4. **Production bindings named `FetchTransport` and `DateClock`** (§1) — names the browser HTTP and `Date` clock bindings without hiding declared operations in the client.
 5. **`useOperation` takes the operation directly** (§1) — ruled by the user; `OperationSelection` deleted; the hook is a pure async state machine and needs no provider.
-6. **React content prop is `children`** (§2.10) — binds the design's runtime-neutral `content` slot to idiomatic React.
+6. **React content prop is `children`** (§2.10) — ratified; binds the design's runtime-neutral `content` slot to idiomatic React.
 
 ---
 
