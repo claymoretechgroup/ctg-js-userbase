@@ -22,15 +22,15 @@
 | test clock | `FixedClock` | `tests/support/FixedClock.js` | 1 | Test-set timestamp. |
 | `Authentication(client)` | `new Authentication(client)` / `Authentication.init(client)` | `src/core/Authentication.js` | 1, 2 | Class; constructor accepts the client; static `init` factory; `verifyMFA` is phase 2. |
 | `AccountManagement(client)` | `new AccountManagement(client)` / `AccountManagement.init(client)` | `src/core/AccountManagement.js` | 3 | Class; constructor accepts the client; static `init` factory. |
-| `Administration(client)` | `new Administration(client)` / `Administration.init(client)` | `src/core/Administration.js` | 5 | Class; constructor accepts the client; static `init` factory. |
-| `Authorization` | `new Authorization()` / `Authorization.init()` | `src/core/Authorization.js` | 4 | Standalone class; constructor accepts nothing; never a client property. |
+| `Administration(client)` | `new Administration(client)` / `Administration.init(client)` | `src/core/Administration.js` | 4 | Class; constructor accepts the client; static `init` factory. |
+| `Authorization` | `new Authorization()` / `Authorization.init()` | `src/core/Authorization.js` | 1 | Standalone class; constructor accepts nothing; never a client property. |
 | `UserbaseProvider` | `UserbaseProvider` | `src/react/UserbaseProvider.jsx` | 1 | React component. |
 | `RequireSession` | `RequireSession` | `src/react/RequireSession.jsx` | 1 | React component. |
 | `RequirePermission` | `RequirePermission` | `src/react/RequirePermission.jsx` | 1 | React component over Authorization predicates. |
 | `useUserbase` | `useUserbase` | `src/react/useUserbase.js` | 1 | React hook. |
 | `usePermission` | `usePermission` | `src/react/usePermission.js` | 1 | React hook. |
 | `useOperation` | `useOperation` | `src/react/useOperation.js` | 1 | React hook. |
-| Vite workbench | application files | `app/` | 1-5 | Lighter bar, no design document; grows by phase. |
+| Vite workbench | application files | `app/` | 1-4 | Lighter bar, no design document; grows by phase. |
 
 > **Ruled — the client class is `CTGUserClient`:** the CTG class prefix applies, and the holder is named for the user whose session it manages. Supersedes the earlier recorded intended name. Category factories and the six React presentation names stay unprefixed: the factories are the design's own application notation, and hook names must begin with `use`.
 
@@ -318,33 +318,33 @@ No AccountManagement operation changes session state. `confirmEmailChange` and `
 
 ### 2.8 Administration
 
-Phase: 5.
+Phase: 4.
 
 `Administration` is a class; construction over a client yields its operation structure over that exact client.
 
 | Operation | Signature | Method | Path | Query | Body | Credential | Phase |
 |---|---|---|---|---|---|---|---:|
-| `bootstrapAdmin` | `({ secret: string, email: string, password: string }) -> PROMISE<Profile>` | `POST` | `/admin/bootstrap` | none | all fields | `"none"` | 5 |
-| `adminListUsers` | `({ limit?: integer, offset?: integer }) -> PROMISE<[Profile]>` | `GET` | `/admin/users` | `limit?`, `offset?` | none | `"session"` | 5 |
-| `adminGetUser` | `({ id: string }) -> PROMISE<Profile>` | `GET` | `/admin/user` | `id` | none | `"session"` | 5 |
-| `adminCreateUser` | `({ email: string, password: string, name?: string \| null, roles?: [string], status?: string, email_verified?: bool }) -> PROMISE<Profile>` | `POST` | `/admin/users` | none | supplied fields | `"session"` | 5 |
-| `adminUpdateUser` | `({ id: string, name?: string \| null, status?: string, roles?: [string] }) -> PROMISE<Profile>` | `PATCH` | `/admin/user` | `id` | `name?`, `status?`, `roles?` | `"session"` | 5 |
-| `adminDeleteUser` | `({ id: string }) -> PROMISE<VOID>` | `DELETE` | `/admin/user` | `id` | none | `"session"` | 5 |
-| `listRoles` | `(VOID) -> PROMISE<[RoleEntry]>` | `GET` | `/admin/roles` | none | none | `"session"` | 5 |
-| `createRole` | `({ name: string, permissions: [string], scoped: bool }) -> PROMISE<RoleEntry>` | `POST` | `/admin/roles` | none | all fields | `"session"` | 5 |
-| `updateRole` | `({ name: string, permissions: [string], scoped: bool }) -> PROMISE<RoleEntry>` | `PUT` | `/admin/role` | `name` | `permissions`, `scoped` | `"session"` | 5 |
-| `deleteRole` | `({ name: string }) -> PROMISE<VOID>` | `DELETE` | `/admin/role` | `name` | none | `"session"` | 5 |
-| `listPermissions` | `(VOID) -> PROMISE<[PermissionEntry]>` | `GET` | `/admin/permissions` | none | none | `"session"` | 5 |
-| `createPermission` | `({ name: string }) -> PROMISE<PermissionEntry>` | `POST` | `/admin/permissions` | none | `name` | `"session"` | 5 |
-| `updatePermission` | `({ name: string, new_name: string }) -> PROMISE<PermissionEntry>` | `PUT` | `/admin/permission` | `name` | `new_name` | `"session"` | 5 |
-| `deletePermission` | `({ name: string }) -> PROMISE<VOID>` | `DELETE` | `/admin/permission` | `name` | none | `"session"` | 5 |
-| `listGroups` | `(VOID) -> PROMISE<[GroupEntry]>` | `GET` | `/admin/groups` | none | none | `"session"` | 5 |
-| `getGroup` | `({ id: integer }) -> PROMISE<GroupEntry>` | `GET` | `/admin/group` | `id` | none | `"session"` | 5 |
-| `createGroup` | `({ name: string, roles?: [string] }) -> PROMISE<GroupEntry>` | `POST` | `/admin/groups` | none | `name`, `roles?` | `"session"` | 5 |
-| `updateGroup` | `({ id: integer, name?: string, roles?: [string] }) -> PROMISE<GroupEntry>` | `PATCH` | `/admin/group` | `id` | `name?`, `roles?` | `"session"` | 5 |
-| `deleteGroup` | `({ id: integer }) -> PROMISE<VOID>` | `DELETE` | `/admin/group` | `id` | none | `"session"` | 5 |
-| `addGroupMember` | `({ id: integer, user_id: string }) -> PROMISE<{ status: "member_added" }>` | `POST` | `/admin/group/member` | `id`, `user_id` | none | `"session"` | 5 |
-| `removeGroupMember` | `({ id: integer, user_id: string }) -> PROMISE<VOID>` | `DELETE` | `/admin/group/member` | `id`, `user_id` | none | `"session"` | 5 |
+| `bootstrapAdmin` | `({ secret: string, email: string, password: string }) -> PROMISE<Profile>` | `POST` | `/admin/bootstrap` | none | all fields | `"none"` | 4 |
+| `adminListUsers` | `({ limit?: integer, offset?: integer }) -> PROMISE<[Profile]>` | `GET` | `/admin/users` | `limit?`, `offset?` | none | `"session"` | 4 |
+| `adminGetUser` | `({ id: string }) -> PROMISE<Profile>` | `GET` | `/admin/user` | `id` | none | `"session"` | 4 |
+| `adminCreateUser` | `({ email: string, password: string, name?: string \| null, roles?: [string], status?: string, email_verified?: bool }) -> PROMISE<Profile>` | `POST` | `/admin/users` | none | supplied fields | `"session"` | 4 |
+| `adminUpdateUser` | `({ id: string, name?: string \| null, status?: string, roles?: [string] }) -> PROMISE<Profile>` | `PATCH` | `/admin/user` | `id` | `name?`, `status?`, `roles?` | `"session"` | 4 |
+| `adminDeleteUser` | `({ id: string }) -> PROMISE<VOID>` | `DELETE` | `/admin/user` | `id` | none | `"session"` | 4 |
+| `listRoles` | `(VOID) -> PROMISE<[RoleEntry]>` | `GET` | `/admin/roles` | none | none | `"session"` | 4 |
+| `createRole` | `({ name: string, permissions: [string], scoped: bool }) -> PROMISE<RoleEntry>` | `POST` | `/admin/roles` | none | all fields | `"session"` | 4 |
+| `updateRole` | `({ name: string, permissions: [string], scoped: bool }) -> PROMISE<RoleEntry>` | `PUT` | `/admin/role` | `name` | `permissions`, `scoped` | `"session"` | 4 |
+| `deleteRole` | `({ name: string }) -> PROMISE<VOID>` | `DELETE` | `/admin/role` | `name` | none | `"session"` | 4 |
+| `listPermissions` | `(VOID) -> PROMISE<[PermissionEntry]>` | `GET` | `/admin/permissions` | none | none | `"session"` | 4 |
+| `createPermission` | `({ name: string }) -> PROMISE<PermissionEntry>` | `POST` | `/admin/permissions` | none | `name` | `"session"` | 4 |
+| `updatePermission` | `({ name: string, new_name: string }) -> PROMISE<PermissionEntry>` | `PUT` | `/admin/permission` | `name` | `new_name` | `"session"` | 4 |
+| `deletePermission` | `({ name: string }) -> PROMISE<VOID>` | `DELETE` | `/admin/permission` | `name` | none | `"session"` | 4 |
+| `listGroups` | `(VOID) -> PROMISE<[GroupEntry]>` | `GET` | `/admin/groups` | none | none | `"session"` | 4 |
+| `getGroup` | `({ id: integer }) -> PROMISE<GroupEntry>` | `GET` | `/admin/group` | `id` | none | `"session"` | 4 |
+| `createGroup` | `({ name: string, roles?: [string] }) -> PROMISE<GroupEntry>` | `POST` | `/admin/groups` | none | `name`, `roles?` | `"session"` | 4 |
+| `updateGroup` | `({ id: integer, name?: string, roles?: [string] }) -> PROMISE<GroupEntry>` | `PATCH` | `/admin/group` | `id` | `name?`, `roles?` | `"session"` | 4 |
+| `deleteGroup` | `({ id: integer }) -> PROMISE<VOID>` | `DELETE` | `/admin/group` | `id` | none | `"session"` | 4 |
+| `addGroupMember` | `({ id: integer, user_id: string }) -> PROMISE<{ status: "member_added" }>` | `POST` | `/admin/group/member` | `id`, `user_id` | none | `"session"` | 4 |
+| `removeGroupMember` | `({ id: integer, user_id: string }) -> PROMISE<VOID>` | `DELETE` | `/admin/group/member` | `id`, `user_id` | none | `"session"` | 4 |
 
 No Administration operation changes session state. `bootstrapAdmin` is not renewal-eligible and sends no bearer credential; the setup secret is in the JSON body. The service accepts bootstrap only while a setup secret is configured and no user holds the administrator role. With the correct secret after initialization, the service returns status 409 with operation failure `ADMIN_EXISTS` and message `"Already initialized"`. The service checks the secret before administrator existence.
 
@@ -352,15 +352,15 @@ No Administration operation changes session state. `bootstrapAdmin` is not renew
 
 ### 2.9 Authorization
 
-Phase: 4.
+Phase: 1.
 
 `Authorization` is a standalone class; its constructor accepts nothing. An instance accepts no client, reaches no service, reads no session state, reads no clock, and mutates nothing.
 
 | Operation | Signature | Phase |
 |---|---|---:|
-| `hasPermission` | `(Claims \| null, string) -> bool` | 4 |
-| `hasPermissionInAnyForm` | `(Claims \| null, string) -> bool` | 4 |
-| `hasPermissionOver` | `(Claims \| null, string, [integer]) -> bool` | 4 |
+| `hasPermission` | `(Claims \| null, string) -> bool` | 1 |
+| `hasPermissionInAnyForm` | `(Claims \| null, string) -> bool` | 1 |
+| `hasPermissionOver` | `(Claims \| null, string, [integer]) -> bool` | 1 |
 
 `hasPermission` returns true only when `claims.permissions` is a list containing the exact permission string. `hasPermissionInAnyForm` returns true when the exact string appears in `permissions` or `scoped_permissions`. `hasPermissionOver` returns true for global authority or for scoped authority when `target_group_ids` and `claims.group_ids` intersect. Null claims, absent lists, non-list values, empty target groups without global authority, and empty holder groups for scoped checks all return false. There are no wildcards, prefixes, hierarchy, or case folding.
 
@@ -757,9 +757,9 @@ Status 204 returns `VOID` without parsing the body.
 | `verifyMFA` Core behavior and endpoint mapping | `tests/api` scripted and live staging with seeded TOTP-enabled user | 2 |
 | AccountManagement Core behavior and endpoint mapping, including MFA enrollment and email-change flows | `tests/api` scripted and live staging | 3 |
 | Credential-lifecycle browser tests for email change, MFA enrollment, and same-site renewal after account changes | `tests/browser` same-site | 3 |
-| Authorization pure predicates | `tests/api` or unit subset using `ctg-js-test`; no transport and no clock applications | 4 |
-| Authorization-backed presentation gates | `tests/react` DOM-is-the-proof | 4 |
-| Administration Core behavior and endpoint mapping | `tests/api` scripted and live staging with seeded administrator | 5 |
+| Authorization pure predicates | `tests/api` or unit subset using `ctg-js-test`; no transport and no clock applications | 1 |
+| Authorization-backed presentation gates | `tests/react` DOM-is-the-proof | 1 |
+| Administration Core behavior and endpoint mapping | `tests/api` scripted and live staging with seeded administrator | 4 |
 
 The api suite is cross-origin and cannot exercise renewal through the refresh cookie. Renewal machinery is proven with scripted transport in the api suite; credential-lifecycle renewal is owned by same-site browser tests. Endpoint cases are live-staging api cases against the pinned service.
 
