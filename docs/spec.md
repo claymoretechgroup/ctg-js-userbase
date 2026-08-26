@@ -38,7 +38,7 @@
 
 > **Ruled (extended) — Authorization is a class too:** standalone and pure; its constructor accepts nothing (`new Authorization()` / `Authorization.init()`), it holds no client, transport, clock, or state, and it is never a client property. Same class idiom as the service-backed groups.
 
-> **Judgment Call — production bindings named `FetchTransport` and `DateClock`:** Core declares `Transport` and `Clock` but leaves production names to this spec. These names state the platform binding plainly and keep the declared operations constructor-supplied rather than hidden inside `CTGUserClient`.
+> **Ratified — production bindings named `FetchTransport` and `DateClock`:** Core declares `Transport` and `Clock` but leaves production names to this spec. These names state the platform binding plainly and keep the declared operations constructor-supplied rather than hidden inside `CTGUserClient`.
 
 > **Ruled — `useOperation` takes the operation directly; `OperationSelection` is deleted:** the hook is a pure asynchronous state machine over any promise-returning operation. The application constructs operation groups itself (`Authentication.init(client)`) and hands the hook a bound operation. The selection indirection existed to hide application forms from render code; with class construction being one line, it duplicated the application mechanism and is removed. Because the hook no longer reads the provider's client, it no longer requires an enclosing provider.
 
@@ -815,7 +815,7 @@ Extensions do not mutate session state except through Authentication operations 
 1. **Client class named `CTGUserClient`** (§1) — ruled by the user; CTG prefix applied, holder named for the user; supersedes `SessionClient`.
 2. **Operation groups as classes** (§1) — ruled by the user: constructor accepts the client, static `init` factory; same-session double application and app-group symmetry hold; supersedes the drafted factory-function call.
 3. **Authorization as a class** (§1) — nullary constructor plus `init()`; standalone and client-free; extends the Q2 ruling for idiom consistency.
-4. **Production bindings named `FetchTransport` and `DateClock`** (§1) — names the browser HTTP and `Date` clock bindings without hiding declared operations in the client.
+4. **Production bindings named `FetchTransport` and `DateClock`** (§1) — ratified; names the browser HTTP and `Date` clock bindings without hiding declared operations in the client.
 5. **`useOperation` takes the operation directly** (§1) — ruled by the user; `OperationSelection` deleted; the hook is a pure async state machine and needs no provider.
 6. **React content prop is `children`** (§2.10) — ratified; binds the design's runtime-neutral `content` slot to idiomatic React.
 
