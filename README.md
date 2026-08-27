@@ -1,16 +1,16 @@
 # ctg-js-userbase
 
-`ctg-js-userbase` is a reusable JavaScript client layer for the CTG userbase API, plus a React presentation layer and a Vite workbench application. The core is a single session client — the holder and maintainer of one user's session against one service deployment — with the API surface organized as operation categories applied to that client. Renewal is reactive and single-flight, the access token lives in memory only, and the refresh credential is a browser-held HttpOnly cookie the code can never read.
+`ctg-js-userbase` is a reusable TypeScript client layer for the CTG userbase API, plus a React presentation layer and a Vite workbench application. The core is a single session client — the holder and maintainer of one user's session against one service deployment — with the API surface organized as operation categories applied to that client. Renewal is reactive and single-flight, the access token lives in memory only, and the refresh credential is a browser-held HttpOnly cookie the code can never read.
 
 **Key Features:**
 
-* **One session client**: `CTGUserClient` owns session state, the shared request primitive, and the two declared operations (transport and clock) supplied at construction
+* **One session client**: `CTGUserbaseClient` owns session state, the shared request primitive, and the two declared operations (transport and clock) supplied at construction
 * **Categories applied, not attached**: `Authentication`, `AccountManagement`, and `Administration` are classes constructed over a client (`Authentication.init(client)`); the client itself has no category surface and is never subclassed
 * **Standalone authorization**: `Authorization` is a pure structure of predicates over a claim set — advisory only; the service is the enforcer
 * **Reactive single-flight renewal**: an eligible 401 triggers one refresh and one replay, shared across concurrent requests; the refresh credential travels only as a cookie inside the transport
 * **Substitutable by construction**: production binds `FetchTransport` and `DateClock`; conformance runs bind a scripted transport and a fixed clock, making every defined behavior deterministic under test
 * **Lean React layer**: `UserbaseProvider`, `RequireSession`, `RequirePermission`, `useUserbase`, `usePermission`, and `useOperation` — a provider, two gates, and three hooks; all screens are application territory
-* **Zero runtime dependencies**: `src/core` uses platform APIs only; `src/react` depends only on React and the core
+* **Zero runtime dependencies**: strict TypeScript, declarations emitted to `dist/`; `src/core` uses platform APIs only; `src/react` depends only on React and the core
 
 ## Install
 
@@ -24,13 +24,13 @@ React is an optional peer dependency, needed only for `src/react`.
 
 ### Core
 
-```javascript
-import { CTGUserClient, FetchTransport, DateClock, Authentication } from "ctg-js-userbase";
+```typescript
+import { CTGUserbaseClient, CTGUserbaseUtil, Authentication } from "ctg-js-userbase";
 
-const client = new CTGUserClient({
+const client = new CTGUserbaseClient({
     base_url: "",                       // same-origin; or the service origin
-    transport: new FetchTransport(),
-    clock: new DateClock()
+    transport: CTGUserbaseUtil,          // stateless static bindings for both
+    clock: CTGUserbaseUtil               // declared operations
 });
 
 const auth = Authentication.init(client);
@@ -91,7 +91,7 @@ Phase 1 (client machinery, authentication without MFA, authorization, presentati
 - [ ] **Phase 4 — Administration**: live suite for `endpoints/04` (bootstrap acceptance cases), workbench admin screens
 - [ ] **Cross-origin scenario**: Vite dev server against staging CORS, and the cross-origin renewal-limit browser case
 - [ ] Move the spec's service pin forward when `ctg-php-userbase` publishes the wire-discriminant fix
-- [ ] **TypeScript conversion** (ruled: TypeScript throughout): `src/`, all four test suites, and the workbench convert to TypeScript; the test frameworks stay ctg-js-test / ctg-react-test / ctg-js-browser-test, consumed through their shipped declarations; the 221-case suite stays the contract — green before and after
+- [x] **TypeScript conversion** (done): `src/`, all four suites, and the workbench are TypeScript; frameworks unchanged via their shipped declarations; 221 cases green before and after; `dist/` built with declarations on install
 - [ ] Usage guides beyond this README; 1.0 versioning decision once all phases gate green
 
 ## License
