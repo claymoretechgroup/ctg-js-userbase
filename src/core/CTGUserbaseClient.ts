@@ -1,40 +1,73 @@
 // Dependency: public client error for request and configuration failures.
 import ClientError from "./ClientError.js";
+// Dependency: public core contracts for the client surface.
+import type { Claims, Clock, Config, Credential, HTTPMethod, Request, Response, SessionState, Transport } from "./types.js";
 
 export const ESTABLISH_SESSION = Symbol("establishSession");
 export const CLEAR_SESSION = Symbol("clearSession");
 
-// Holds one user's session state and applies the shared request primitive.
-export default class CTGUserClient {
+interface OriginalRequest {
+    method: HTTPMethod;
+    path: string;
+    query?: Record<string, unknown>;
+    body?: Record<string, unknown>;
+    credential: Credential;
+    eligible: boolean;
+    replayed: boolean;
+}
 
-    _baseUrl;
-    _transport;
-    _clock;
-    _sessionState;
-    _listeners;
-    _listenerId;
-    _renewalFlight;
+interface ErrorFields {
+    message?: unknown;
+    status?: number | null;
+    service_type?: string | null;
+    fields?: unknown;
+    details?: unknown;
+}
+
+type SessionListener = (session: SessionState) => void;
+
+type MutableClientError = ClientError & {
+    status: number | null;
+    service_type: string | null;
+    fields: Record<string, unknown> | null;
+    details: Record<string, unknown> | null;
+};
+
+// Holds one user's session state and applies the shared request primitive.
+export default class CTGUserbaseClient {
+
+    /* Instance Fields */
+    private readonly _baseUrl: string;
+    private readonly _transport: Transport;
+    private readonly _clock: Clock;
+    private _sessionState: SessionState;
+    private readonly _listeners: Map<number, SessionListener>;
+    private _listenerId: number;
+    private _renewalFlight: Promise<void> | null;
 
     // CONSTRUCTOR :: Config -> this
     // Creates a client over caller-supplied transport and clock operations.
-    constructor(config = {}) {
-        if (config.transport === undefined || typeof config.transport?.send !== "function") {
-            throw CTGUserClient._configurationError("transport");
+    constructor(config: Config) {
+        const supplied = config as Partial<Config> | undefined;
+        const options = supplied ?? {};
+
+        if (options.transport === undefined || typeof options.transport?.send !== "function") {
+            throw CTGUserbaseClient._configurationError("transport");
         }
 
-        if (config.clock === undefined || typeof config.clock?.now !== "function") {
-            throw CTGUserClient._configurationError("clock");
+        if (options.clock === undefined || typeof options.clock?.now !== "function") {
+            throw CTGUserbaseClient._configurationError("clock");
         }
 
-        if (config.base_url !== undefined && typeof config.base_url !== "string") {
-            throw CTGUserClient._configurationError("base_url");
+        if (options.base_url !== undefined && typeof options.base_url !== "string") {
+            throw CTGUserbaseClient._configurationError("base_url");
         }
 
-        const baseUrl = config.base_url ?? "";
+        const baseUrl = options.base_url ?? "";
 
         this._baseUrl = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
-        this._transport = config.transport;
-        this._clock = config.clock;
+        this._transport = options.transport;
+        this._clock = options.clock;
         this._sessionState = { access_token: null, claims: null };
         this._listeners = new Map();
         this._listenerId = 0;
@@ -49,19 +82,25 @@ export default class CTGUserClient {
 
     // :: HTTPMethod, STRING, MAP<STRING, *>?, MAP<STRING, *>?, Credential? -> PROMISE(*|VOID)
     // Sends a service request through the shared primitive.
-    async request(method, path, query = undefined, body = undefined, credential = "session") {
+    async request(
+        method: HTTPMethod,
+        path: string,
+        query: Record<string, unknown> | undefined = undefined,
+        body: Record<string, unknown> | undefined = undefined,
+        credential: Credential = "session",
+    ): Promise<unknown | void> {
         return await this.#request(method, path, query, body, credential, false);
     }
 
     // :: VOID -> SessionState
     // Returns a defensive copy of the current session.
-    session() {
+    session(): SessionState {
         return this.#copySession(this._sessionState);
     }
 
     // :: (SessionState -> VOID) -> (VOID -> VOID)
     // Registers a session listener and returns an idempotent unsubscribe.
-    subscribe(listener) {
+    subscribe(listener: SessionListener): () => void {
         const id = this._listenerId;
         let subscribed = true;
 
@@ -78,21 +117,21 @@ export default class CTGUserClient {
         };
     }
 
-    // :: VOID -> BOOL
+    // :: VOID -> BOOLEAN
     // Checks whether held claims are unexpired according to the supplied clock.
-    isSessionActive() {
+    isSessionActive(): boolean {
         return this._sessionState.claims !== null && this._clock.now() < this._sessionState.claims.exp;
     }
 
     // :: STRING -> VOID
     // Stores an access token and its decoded claims.
-    [ESTABLISH_SESSION](accessToken) {
-        this.#setSession({ access_token: accessToken, claims: CTGUserClient.decodeClaims(accessToken) });
+    [ESTABLISH_SESSION](accessToken: string): void {
+        this.#setSession({ access_token: accessToken, claims: CTGUserbaseClient.decodeClaims(accessToken) });
     }
 
     // :: VOID -> VOID
     // Clears access-token session state.
-    [CLEAR_SESSION]() {
+    [CLEAR_SESSION](): void {
         this.#setSession({ access_token: null, claims: null });
     }
 
@@ -102,39 +141,42 @@ export default class CTGUserClient {
      *
      */
 
-    // :: HTTPMethod, STRING, MAP<STRING, *>?, MAP<STRING, *>?, Credential?, BOOL -> PROMISE(*|VOID)
+    // :: HTTPMethod, STRING, MAP<STRING, *>?, MAP<STRING, *>?, Credential?, BOOLEAN -> PROMISE(*|VOID)
     // Applies the request algorithm, optionally marking a one-time renewal replay.
-    async #request(method, path, query, body, credential, replayed) {
+    async #request(
+        method: HTTPMethod,
+        path: string,
+        query: Record<string, unknown> | undefined,
+        body: Record<string, unknown> | undefined,
+        credential: Credential,
+        replayed: boolean,
+    ): Promise<unknown | void> {
         const url = this.#buildUrl(path, query);
         const resolvedCredential = this.#resolveCredential(credential);
         const eligible = credential === "session" && resolvedCredential !== null;
         const request = this.#buildRequest(method, url, body, resolvedCredential);
 
-        let response;
+        let response: Response;
         try {
             response = await this._transport.send(request);
         } catch {
-            throw CTGUserClient._transportError(method, url);
+            throw CTGUserbaseClient._transportError(method, url);
         }
 
-        try {
-            return await this.#decodeResponse(response, { method, path, query, body, credential, eligible, replayed });
-        } catch (error) {
-            throw error;
-        }
+        return await this.#decodeResponse(response, { method, path, query, body, credential, eligible, replayed });
     }
 
     // :: Response, OBJECT -> PROMISE(*|VOID)
     // Decodes and classifies one response.
-    async #decodeResponse(response, original) {
+    async #decodeResponse(response: Response, original: OriginalRequest): Promise<unknown | void> {
         if (response.status === 204) {
             return undefined;
         }
 
         const decoded = this.#parseResponseBody(response);
 
-        if (!CTGUserClient._isMap(decoded) || typeof decoded.success !== "boolean" || !Object.hasOwn(decoded, "result")) {
-            throw CTGUserClient._error("MALFORMED_RESPONSE", { status: response.status });
+        if (!CTGUserbaseClient._isMap(decoded) || typeof decoded.success !== "boolean" || !Object.hasOwn(decoded, "result")) {
+            throw CTGUserbaseClient._error("MALFORMED_RESPONSE", { status: response.status });
         }
 
         if (decoded.success) {
@@ -143,7 +185,7 @@ export default class CTGUserClient {
 
         if (response.status === 401) {
             if (typeof decoded.result !== "string") {
-                throw CTGUserClient._error("UNEXPECTED_STATUS", { status: response.status });
+                throw CTGUserbaseClient._error("UNEXPECTED_STATUS", { status: response.status });
             }
 
             if (original.eligible && !original.replayed) {
@@ -151,57 +193,58 @@ export default class CTGUserClient {
                 return await this.#request(original.method, original.path, original.query, original.body, original.credential, true);
             }
 
-            throw CTGUserClient._error("AUTHENTICATION_REQUIRED", {
+            throw CTGUserbaseClient._error("AUTHENTICATION_REQUIRED", {
                 message: decoded.result,
-                status: response.status
+                status: response.status,
             });
         }
 
         if (typeof decoded.result === "string") {
-            throw CTGUserClient._error("UNEXPECTED_STATUS", { status: response.status });
+            throw CTGUserbaseClient._error("UNEXPECTED_STATUS", { status: response.status });
         }
 
-        if (CTGUserClient._isMap(decoded.result)) {
+        if (CTGUserbaseClient._isMap(decoded.result)) {
             if (typeof decoded.result.type === "string") {
-                throw CTGUserClient._error("SERVICE_ERROR", {
+                throw CTGUserbaseClient._error("SERVICE_ERROR", {
                     status: response.status,
                     service_type: decoded.result.type,
                     message: decoded.result.message,
-                    details: decoded.result.details ?? null
+                    details: decoded.result.details ?? null,
                 });
             }
 
-            throw CTGUserClient._error("PARAMETER_REJECTED", {
+            throw CTGUserbaseClient._error("PARAMETER_REJECTED", {
                 status: response.status,
-                fields: decoded.result
+                fields: decoded.result,
             });
         }
 
-        throw CTGUserClient._error("MALFORMED_RESPONSE", { status: response.status });
+        throw CTGUserbaseClient._error("MALFORMED_RESPONSE", { status: response.status });
     }
 
     // :: Response -> *
     // Parses JSON response text and maps invalid JSON to a client error.
-    #parseResponseBody(response) {
+    #parseResponseBody(response: Response): unknown {
         try {
-            return JSON.parse(response.body);
+            return JSON.parse(response.body) as unknown;
         } catch {
-            throw CTGUserClient._error("RESPONSE_NOT_JSON", {
+            throw CTGUserbaseClient._error("RESPONSE_NOT_JSON", {
                 status: response.status,
-                details: { body_preview: String(response.body ?? "").slice(0, 200) }
+                details: { body_preview: String(response.body ?? "").slice(0, 200) },
             });
         }
     }
 
     // :: VOID -> PROMISE(VOID)
     // Performs a single shared session renewal.
-    async #renewSession() {
+    async #renewSession(): Promise<void> {
         if (this._renewalFlight === null) {
             this._renewalFlight = this.#request("POST", "/auth/refresh", undefined, undefined, "none", true)
                 .then((result) => {
-                    this[ESTABLISH_SESSION](result.access_token);
+                    const accessToken = CTGUserbaseClient._isMap(result) ? result.access_token : undefined;
+                    this[ESTABLISH_SESSION](accessToken as string);
                 })
-                .catch((error) => {
+                .catch((error: unknown) => {
                     this[CLEAR_SESSION]();
                     throw error;
                 })
@@ -215,8 +258,8 @@ export default class CTGUserClient {
 
     // :: STRING, MAP<STRING, *>? -> STRING
     // Builds a URL with ordered percent-encoded query parameters.
-    #buildUrl(path, query) {
-        const parts = [];
+    #buildUrl(path: string, query: Record<string, unknown> | undefined): string {
+        const parts: string[] = [];
 
         for (const [name, value] of Object.entries(query ?? {})) {
             if (value !== undefined) {
@@ -229,7 +272,7 @@ export default class CTGUserClient {
 
     // :: Credential? -> STRING|NULL
     // Resolves the bearer credential for a request.
-    #resolveCredential(credential) {
+    #resolveCredential(credential: Credential | undefined): string | null {
         if (credential === "none") {
             return null;
         }
@@ -243,8 +286,13 @@ export default class CTGUserClient {
 
     // :: HTTPMethod, STRING, MAP<STRING, *>?, STRING|NULL -> Request
     // Builds the transport request object.
-    #buildRequest(method, url, body, resolvedCredential) {
-        const headers = { Accept: "application/json" };
+    #buildRequest(
+        method: HTTPMethod,
+        url: string,
+        body: Record<string, unknown> | undefined,
+        resolvedCredential: string | null,
+    ): Request {
+        const headers: Record<string, string> = { Accept: "application/json" };
 
         if (resolvedCredential !== null) {
             headers.Authorization = `Bearer ${resolvedCredential}`;
@@ -259,22 +307,22 @@ export default class CTGUserClient {
             url,
             headers,
             body: body === undefined ? null : JSON.stringify(this.#presentFields(body)),
-            credentials: "include"
+            credentials: "include",
         };
     }
 
     // :: SessionState -> SessionState
     // Copies session state and its claim object for defensive exposure.
-    #copySession(session) {
+    #copySession(session: SessionState): SessionState {
         return {
             access_token: session.access_token,
-            claims: session.claims === null ? null : { ...session.claims }
+            claims: session.claims === null ? null : { ...session.claims },
         };
     }
 
     // :: SessionState -> VOID
     // Replaces session state and notifies listeners in registration order.
-    #setSession(session) {
+    #setSession(session: SessionState): void {
         this._sessionState = this.#copySession(session);
 
         for (const listener of this._listeners.values()) {
@@ -284,8 +332,8 @@ export default class CTGUserClient {
 
     // :: MAP<STRING, *> -> MAP<STRING, *>
     // Drops undefined fields while preserving listed property order.
-    #presentFields(fields) {
-        const present = {};
+    #presentFields(fields: Record<string, unknown>): Record<string, unknown> {
+        const present: Record<string, unknown> = {};
 
         for (const [name, value] of Object.entries(fields ?? {})) {
             if (value !== undefined) {
@@ -304,87 +352,83 @@ export default class CTGUserClient {
 
     // :: STRING -> Claims
     // Decodes the unsigned JWT claim segment.
-    static decodeClaims(accessToken) {
+    static decodeClaims(accessToken: string): Claims {
         try {
             const parts = String(accessToken).split(".");
-            if (parts.length !== 3) {
+            if (parts.length !== 3 || parts[1] === undefined) {
                 throw new Error("bad token");
             }
 
-            const claims = JSON.parse(CTGUserClient._base64UrlDecode(parts[1]));
-            if (!CTGUserClient._isMap(claims)) {
+            const claims = JSON.parse(CTGUserbaseClient._base64UrlDecode(parts[1])) as unknown;
+            if (!CTGUserbaseClient._isMap(claims)) {
                 throw new Error("bad claims");
             }
 
-            return claims;
+            return claims as unknown as Claims;
         } catch {
-            throw CTGUserClient._error("TOKEN_UNREADABLE");
+            throw CTGUserbaseClient._error("TOKEN_UNREADABLE");
         }
     }
 
     // :: STRING -> STRING
     // Decodes a base64url string in browser and Node runtimes.
-    static _base64UrlDecode(value) {
+    static _base64UrlDecode(value: string): string {
         const normalized = value.replaceAll("-", "+").replaceAll("_", "/");
         const padded = normalized.padEnd(normalized.length + ((4 - normalized.length % 4) % 4), "=");
+        const binary = atob(padded);
+        const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
 
-        if (typeof atob === "function") {
-            const binary = atob(padded);
-            const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
-            return new TextDecoder().decode(bytes);
-        }
-
-        return Buffer.from(padded, "base64").toString("utf8");
+        return new TextDecoder().decode(bytes);
     }
 
     // :: STRING -> ClientError
     // Creates a configuration error for a named field.
-    static _configurationError(field) {
-        return CTGUserClient._error("CONFIGURATION_INVALID", { details: { field } });
+    static _configurationError(field: string): ClientError {
+        return CTGUserbaseClient._error("CONFIGURATION_INVALID", { details: { field } });
     }
 
     // :: HTTPMethod, STRING -> ClientError
     // Creates a transport error with request coordinates.
-    static _transportError(method, url) {
-        return CTGUserClient._error("TRANSPORT_FAILED", {
+    static _transportError(method: HTTPMethod, url: string): ClientError {
+        return CTGUserbaseClient._error("TRANSPORT_FAILED", {
             status: null,
-            details: { method, url }
+            details: { method, url },
         });
     }
 
     // :: STRING, OBJECT? -> ClientError
     // Creates and decorates a public client error.
-    static _error(type, fields = {}) {
-        const error = new ClientError(type);
+    static _error(type: string, fields: ErrorFields = {}): ClientError {
+        const error = new ClientError(type) as MutableClientError;
 
         if (Object.hasOwn(fields, "message")) {
-            error.message = fields.message;
+            error.message = fields.message as string;
         }
 
         if (Object.hasOwn(fields, "status")) {
-            error.status = fields.status;
+            error.status = fields.status ?? null;
         }
 
         if (Object.hasOwn(fields, "service_type")) {
-            error.service_type = fields.service_type;
+            error.service_type = fields.service_type ?? null;
         }
 
         if (Object.hasOwn(fields, "fields")) {
-            error.fields = fields.fields;
+            error.fields = fields.fields as Record<string, unknown> | null;
         }
 
         if (Object.hasOwn(fields, "details")) {
-            error.details = fields.details;
+            error.details = fields.details as Record<string, unknown> | null;
         }
 
         return error;
     }
 
-    // :: * -> BOOL
+    // :: * -> BOOLEAN
     // Checks for a non-array object map.
-    static _isMap(value) {
+    static _isMap(value: unknown): value is Record<string, unknown> {
         return value !== null && typeof value === "object" && !Array.isArray(value);
     }
 }
 
-export { CTGUserClient };
+export { CTGUserbaseClient };

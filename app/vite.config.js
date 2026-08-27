@@ -6,7 +6,7 @@ export default defineConfig({
     plugins: [react()],
     resolve: {
         alias: {
-            "ctg-js-userbase": "../index.js"
+            "ctg-js-userbase": "../index.ts"
         }
     }
 });

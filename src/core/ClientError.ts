@@ -1,8 +1,13 @@
+interface ClientErrorResolution {
+    type: string;
+    code: number;
+}
+
 // Maps client and service failure classifications to stable public errors.
 export default class ClientError extends Error {
 
     /* Static Fields */
-    static TYPES = {
+    static readonly TYPES = {
         TRANSPORT_FAILED: 1000,
         RESPONSE_NOT_JSON: 1001,
         MALFORMED_RESPONSE: 1002,
@@ -14,9 +19,17 @@ export default class ClientError extends Error {
         CONFIGURATION_INVALID: 4000
     };
 
-    // CONSTRUCTOR :: STRING|INT -> this
+    /* Instance Fields */
+    readonly type: string;
+    readonly code: number;
+    readonly status: number | null;
+    readonly service_type: string | null;
+    readonly fields: Record<string, unknown> | null;
+    readonly details: Record<string, unknown> | null;
+
+    // CONSTRUCTOR :: STRING|NUMBER -> this
     // Creates a public client error from a known type or code.
-    constructor(typeOrCode) {
+    constructor(typeOrCode: string | number) {
         const resolved = ClientError.#resolve(typeOrCode);
 
         super(resolved.type);
@@ -35,9 +48,9 @@ export default class ClientError extends Error {
      *
      */
 
-    // :: STRING|INT -> INT|STRING
+    // :: STRING|NUMBER -> NUMBER|STRING
     // Resolves a type to its code, or a code to its type.
-    static lookup(typeOrCode) {
+    static lookup(typeOrCode: string | number): number | string {
         const resolved = ClientError.#resolve(typeOrCode);
         return typeof typeOrCode === "string" ? resolved.code : resolved.type;
     }
@@ -48,11 +61,12 @@ export default class ClientError extends Error {
      *
      */
 
-    // :: STRING|INT -> {type:STRING, code:INT}
+    // :: STRING|NUMBER -> {type:STRING, code:NUMBER}
     // Resolves constructor and lookup input.
-    static #resolve(typeOrCode) {
+    static #resolve(typeOrCode: string | number): ClientErrorResolution {
         if (typeof typeOrCode === "string" && Object.hasOwn(ClientError.TYPES, typeOrCode)) {
-            return { type: typeOrCode, code: ClientError.TYPES[typeOrCode] };
+            const type = typeOrCode as keyof typeof ClientError.TYPES;
+            return { type, code: ClientError.TYPES[type] };
         }
 
         if (Number.isInteger(typeOrCode)) {

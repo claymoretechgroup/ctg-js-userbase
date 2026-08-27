@@ -3,9 +3,9 @@ import Authorization from "../core/Authorization.js";
 // Dependency: provider-backed session exposure.
 import useUserbase from "./useUserbase.js";
 
-// HOOK :: STRING, [INT]? -> BOOL
+// HOOK :: STRING, [NUMBER]? -> BOOLEAN
 // Evaluates the current session claims against a permission predicate.
-export default function usePermission(permission, targetGroupIds = undefined) {
+export default function usePermission(permission: string, targetGroupIds: number[] | undefined = undefined): boolean {
     const { session } = useUserbase();
     const authorization = Authorization.init();
 
