@@ -91,6 +91,7 @@ Phase 1 (client machinery, authentication without MFA, authorization, presentati
 - [ ] **Phase 4 — Administration**: live suite for `endpoints/04` (bootstrap acceptance cases), workbench admin screens
 - [ ] **Cross-origin scenario**: Vite dev server against staging CORS, and the cross-origin renewal-limit browser case
 - [ ] Move the spec's service pin forward when `ctg-php-userbase` publishes the wire-discriminant fix
+- [ ] **TypeScript declarations**: hand-written `.d.ts` files for the public exports plus a `check:types` script, as ctg-js-test and ctg-js-browser-test ship — the library stays plain JS
 - [ ] Usage guides beyond this README; 1.0 versioning decision once all phases gate green
 
 ## License
