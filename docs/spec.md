@@ -2,45 +2,47 @@
 
 **Realizes:** js-userbase design set: `concepts.md`, `core/`, `presentation.md`, and `endpoints/`; all phases are specified here and phase-marked per `design-docs/js-userbase/ROADMAP.md`.
 **Service Pin:** `ctg-php-userbase` at commit `cb9cf9c` (pushed HEAD). The Endpoint documents restate the consumed contract; the pin names the commit conformance is verified against.
-**Target:** JavaScript (ES modules, browser; Node for tests), Vite workbench.
-**Code Style:** `ctg-project-proc/code-styles/js-code-style.md`.
-**Test Frameworks:** `ctg-js-test` for the api suite, `ctg-react-test` for the React suite, and `ctg-js-browser-test` for the browser suite.
+**Target:** TypeScript (ES2022, NodeNext ESM; browser runtime for `src/`, Node for tests; compiled output in `dist/` with emitted declarations), Vite TypeScript workbench.
+**Code Style:** `ctg-project-proc/code-styles/typescript-code-style.md`.
+**Test Frameworks:** `ctg-js-test` for the api and live suites, `ctg-react-test` for the React suite, and `ctg-js-browser-test` for the browser suite, consumed through their shipped TypeScript declarations. `ctg-ts-test` is not involved.
 
 ---
 
 ## 1. Realization Map
 
-| Design Structure | JS Realization | Module | Phase | Notes |
+| Design Structure | TypeScript Realization | Module | Phase | Notes |
 |---|---|---|---:|---|
-| `client` | `CTGUserClient` | `src/core/CTGUserClient.js` | 1 | Zero-dependency ES module class. |
-| `ClientError` | `ClientError` | `src/core/ClientError.js` | 1 | Extends `Error`; accepts type name or integer code. |
+| §2.2 public types | exported types/interfaces | `src/core/types.ts` | 1-4 | Realizes every `TYPE ::` and declared `Transport`/`Clock` structure name-for-name. |
+| `client` | `CTGUserbaseClient` | `src/core/CTGUserbaseClient.ts` | 1 | Zero-dependency ES module class. |
+| `ClientError` | `ClientError` | `src/core/ClientError.ts` | 1 | Extends `Error`; accepts type name or integer code. |
 | `Transport` | supplied object with `send` | construction value | 1 | Declared operation structure. |
 | `Clock` | supplied object with `now` | construction value | 1 | Declared operation structure. |
-| production transport | `FetchTransport` | `src/core/transports/FetchTransport.js` | 1 | Browser `fetch` binding. |
-| production clock | `DateClock` | `src/core/clocks/DateClock.js` | 1 | `Date`-based clock. |
-| test transport | `ScriptedTransport` | `tests/support/ScriptedTransport.js` | 1 | Ordered request script and request log. |
-| test clock | `FixedClock` | `tests/support/FixedClock.js` | 1 | Test-set timestamp. |
-| `Authentication(client)` | `new Authentication(client)` / `Authentication.init(client)` | `src/core/Authentication.js` | 1, 2 | Class; constructor accepts the client; static `init` factory; `verifyMFA` is phase 2. |
-| `AccountManagement(client)` | `new AccountManagement(client)` / `AccountManagement.init(client)` | `src/core/AccountManagement.js` | 3 | Class; constructor accepts the client; static `init` factory. |
-| `Administration(client)` | `new Administration(client)` / `Administration.init(client)` | `src/core/Administration.js` | 4 | Class; constructor accepts the client; static `init` factory. |
-| `Authorization` | `new Authorization()` / `Authorization.init()` | `src/core/Authorization.js` | 1 | Standalone class; constructor accepts nothing; never a client property. |
-| `UserbaseProvider` | `UserbaseProvider` | `src/react/UserbaseProvider.jsx` | 1 | React component. |
-| `RequireSession` | `RequireSession` | `src/react/RequireSession.jsx` | 1 | React component. |
-| `RequirePermission` | `RequirePermission` | `src/react/RequirePermission.jsx` | 1 | React component over Authorization predicates. |
-| `useUserbase` | `useUserbase` | `src/react/useUserbase.js` | 1 | React hook. |
-| `usePermission` | `usePermission` | `src/react/usePermission.js` | 1 | React hook. |
-| `useOperation` | `useOperation` | `src/react/useOperation.js` | 1 | React hook. |
-| Vite workbench | application files | `app/` | 1-4 | Lighter bar, no design document; grows by phase. |
+| production transport + clock | `CTGUserbaseUtil` | `src/core/CTGUserbaseUtil.ts` | 1 | Stateless singleton; static `send`/`now` satisfy `Transport` and `Clock` structurally. |
+| test transport | `ScriptedTransport` | `tests/support/ScriptedTransport.ts` | 1 | Ordered request script and request log. |
+| test clock | `FixedClock` | `tests/support/FixedClock.ts` | 1 | Test-set timestamp. |
+| `Authentication(client)` | `new Authentication(client)` / `Authentication.init(client)` | `src/core/Authentication.ts` | 1, 2 | Class; constructor accepts the client; static `init` factory; `verifyMFA` is phase 2. |
+| `AccountManagement(client)` | `new AccountManagement(client)` / `AccountManagement.init(client)` | `src/core/AccountManagement.ts` | 3 | Class; constructor accepts the client; static `init` factory. |
+| `Administration(client)` | `new Administration(client)` / `Administration.init(client)` | `src/core/Administration.ts` | 4 | Class; constructor accepts the client; static `init` factory. |
+| `Authorization` | `new Authorization()` / `Authorization.init()` | `src/core/Authorization.ts` | 1 | Standalone class; constructor accepts nothing; never a client property. |
+| `UserbaseProvider` | `UserbaseProvider` | `src/react/UserbaseProvider.tsx` | 1 | React component. |
+| `RequireSession` | `RequireSession` | `src/react/RequireSession.tsx` | 1 | React component. |
+| `RequirePermission` | `RequirePermission` | `src/react/RequirePermission.tsx` | 1 | React component over Authorization predicates. |
+| `useUserbase` | `useUserbase` | `src/react/useUserbase.ts` | 1 | React hook. |
+| `usePermission` | `usePermission` | `src/react/usePermission.ts` | 1 | React hook. |
+| `useOperation` | `useOperation` | `src/react/useOperation.ts` | 1 | React hook. |
+| Vite workbench | application files | `app/` | 1-4 | TypeScript Vite workbench; lighter bar, no design document; grows by phase. |
 
-> **Ruled — the client class is `CTGUserClient`:** the CTG class prefix applies, and the holder is named for the user whose session it manages. Supersedes the earlier recorded intended name. Category factories and the six React presentation names stay unprefixed: the factories are the design's own application notation, and hook names must begin with `use`.
+> **Ruled — the client class is `CTGUserbaseClient`:** the CTG class prefix applies, and the holder is named for the user whose session it manages. Supersedes the earlier recorded intended name. Category factories and the six React presentation names stay unprefixed: the factories are the design's own application notation, and hook names must begin with `use`.
 
 > **Ruled — operation groups are classes:** each category is a class whose constructor accepts the client instance, with a supporting static `init(client)` factory per the CTG code style. The design's application form `Authentication(client)` is realized as construction. Instances hold the client; two constructions over one client share that client's session and renewal; the client itself is never subclassed.
 
 > **Ruled (extended) — Authorization is a class too:** standalone and pure; its constructor accepts nothing (`new Authorization()` / `Authorization.init()`), it holds no client, transport, clock, or state, and it is never a client property. Same class idiom as the service-backed groups.
 
-> **Ratified — production bindings named `FetchTransport` and `DateClock`:** Core declares `Transport` and `Clock` but leaves production names to this spec. These names state the platform binding plainly and keep the declared operations constructor-supplied rather than hidden inside `CTGUserClient`.
+> **Ruled — production bindings are `CTGUserbaseUtil` (supersedes the earlier `FetchTransport`/`DateClock` ratification):** the production bindings are stateless, so instances were ceremony; one util singleton carries both declared operations as static methods, structurally satisfying `Transport` and `Clock`, still constructor-supplied and never reached from inside the client. The client class name is `CTGUserbaseClient` (supersedes `CTGUserClient`): the public surface's family term is Userbase (`UserbaseProvider`, `useUserbase`), and the client is the client of the userbase, holding one user's session.
 
 > **Ruled — `useOperation` takes the operation directly; `OperationSelection` is deleted:** the hook is a pure asynchronous state machine over any promise-returning operation. The application constructs operation groups itself (`Authentication.init(client)`) and hands the hook a bound operation. The selection indirection existed to hide application forms from render code; with class construction being one line, it duplicated the application mechanism and is removed. Because the hook no longer reads the provider's client, it no longer requires an enclosing provider.
+
+> **Ruled — TypeScript throughout:** the library source, React layer, test suites, and workbench are TypeScript (`.ts` / `.tsx`) while behavior, operation semantics, phase markers, conformance cases, anti-patterns, existing test frameworks, and the repository/package name `ctg-js-userbase` remain unchanged.
 
 ---
 
@@ -53,33 +55,34 @@ Phase: all directories are declared now; files are implemented by their row phas
 ```
 src/
     core/
-        CTGUserClient.js
-        ClientError.js
-        Authentication.js
-        AccountManagement.js
-        Administration.js
-        Authorization.js
-        transports/
-            FetchTransport.js
-        clocks/
-            DateClock.js
+        types.ts
+        CTGUserbaseClient.ts
+        ClientError.ts
+        Authentication.ts
+        AccountManagement.ts
+        Administration.ts
+        Authorization.ts
+        CTGUserbaseUtil.ts
     react/
-        UserbaseProvider.jsx
-        RequireSession.jsx
-        RequirePermission.jsx
-        useUserbase.js
-        usePermission.js
-        useOperation.js
+        UserbaseProvider.tsx
+        RequireSession.tsx
+        RequirePermission.tsx
+        useUserbase.ts
+        usePermission.ts
+        useOperation.ts
 app/
 tests/
     api/
+    live/
     react/
     browser/
     support/
-index.js
+dist/
+index.ts
+tsconfig.json
 ```
 
-`src/core` has zero runtime dependencies. `src/react` depends only on React and `src/core`. `app/` is a Vite workbench and is not a normative design source. No QR component or QR helper exists anywhere in `src/`.
+`src/core` has zero runtime dependencies. `src/core/types.ts` is the public type module: every §2.2 `TYPE ::` and both declared operation structures are realized there as exported TypeScript types or interfaces. `src/react` depends only on React and `src/core`. `app/` is a Vite TypeScript workbench and is not a normative design source. `tsconfig.json` governs the package build. `dist/` is generated build output and is not committed. No QR component or QR helper exists anywhere in `src/`.
 
 ### 2.2 Types
 
@@ -161,14 +164,18 @@ DECLARED :: Clock     => { now:  (VOID) -> timestamp }
 
 `Authenticated.mfa_required` is the optional literal `false`. It is present on the completed `login` branch and absent on `verifyMFA` and `refresh` results.
 
-### 2.3 `CTGUserClient`
+The notation block above remains the design contract. In TypeScript realization, each `TYPE ::` becomes an exported type or interface in `src/core/types.ts`, name-for-name. `DECLARED :: Transport` and `DECLARED :: Clock` become exported interfaces. `LoginResult` is a discriminated union on `mfa_required`, with `Authenticated` carrying `mfa_required?: false` and `MFAChallenge` carrying `mfa_required: true`. `HTTPMethod` and `Credential` are union type aliases. `timestamp` is a type alias of `number`.
+
+The public TypeScript surface is strict: no `any` appears in exported signatures. Unknown-shaped wire values are typed as `unknown` and narrowed with runtime checks or type guards before use. Object contracts use interfaces; unions and aliases use type aliases. Dictionaries use `Record<K, V>` where a plain object map is intended.
+
+### 2.3 `CTGUserbaseClient`
 
 Phase: 1.
 
-`CTGUserClient` is the only client class. One instance holds one user's session against one service deployment.
+`CTGUserbaseClient` is the only client class. One instance holds one user's session against one service deployment.
 
 ```
-CLASS :: CTGUserClient : (Config) => {
+CLASS :: CTGUserbaseClient : (Config) => {
     request:         (HTTPMethod, string, MAP<string, value>?, MAP<string, value>?, Credential?) -> PROMISE<value | VOID>,
     session:         (VOID) -> SessionState,
     subscribe:       ((SessionState) -> VOID) -> ((VOID) -> VOID),
@@ -238,25 +245,28 @@ The constructor accepts a type name or integer code and resolves the other. Unkn
 
 Phase: 1.
 
-`FetchTransport` realizes production `Transport`.
+`CTGUserbaseUtil` is the production binding for both declared
+operations: a stateless singleton whose static methods structurally
+satisfy the `Transport` and `Clock` interfaces. It is never
+instantiated; the class object itself is passed as both `transport`
+and `clock`. The production bindings hold no state, so instances would
+be ceremony; the test doubles are the opposite (their state is what a
+case scripts), which is why they remain instance classes.
 
-```
-CLASS :: FetchTransport : (VOID) => {
-    send: (Request) -> PROMISE<Response>
+```typescript
+export default class CTGUserbaseUtil {
+    static send(request: Request): Promise<Response>;   // satisfies Transport
+    static now(): number;                               // satisfies Clock
 }
+
+const client = new CTGUserbaseClient({
+    base_url: "",
+    transport: CTGUserbaseUtil,
+    clock: CTGUserbaseUtil
+});
 ```
 
-`send` maps `Request` to browser `fetch` field for field, returns a `Response` for any HTTP status, rejects only when no response was obtained, does not retry, and does not expose cookies. `Response.body` is raw text.
-
-`DateClock` realizes production `Clock`.
-
-```
-CLASS :: DateClock : (VOID) => {
-    now: (VOID) -> timestamp
-}
-```
-
-`now()` returns `Math.floor(Date.now() / 1000)`.
+`send` maps `Request` to browser `fetch` field for field, returns a `Response` for any HTTP status, rejects only when no response was obtained, does not retry, and does not expose cookies. `Response.body` is raw text. `now()` returns `Math.floor(Date.now() / 1000)`.
 
 `ScriptedTransport` and `FixedClock` are test support, not production package exports.
 
@@ -272,7 +282,15 @@ CLASS :: FixedClock : (timestamp) => {
 }
 ```
 
-### 2.6 Authentication
+### 2.6 TypeScript Tooling
+
+Phase: 1.
+
+The package `tsconfig.json` mirrors the `ctg-ts-test` house TypeScript convention without changing the test framework choice: strict checking, `target: "ES2022"`, `module: "NodeNext"`, `moduleResolution: "NodeNext"`, `declaration: true`, `declarationMap: true`, `noUncheckedIndexedAccess: true`, `verbatimModuleSyntax: true`, `sourceMap: true`, `outDir: "dist"`, and `rootDir: "src"`. Because React component files are `.tsx`, it also sets `jsx: "react-jsx"`.
+
+The workbench keeps its own Vite TypeScript configuration. All four test suites are TypeScript files on the existing `ctg-js-test`, `ctg-react-test`, and `ctg-js-browser-test` frameworks, using those packages' shipped declarations; `ctg-ts-test` is not introduced. Test imports of package source use NodeNext `.js` specifiers that Vitest resolves to the matching `.ts` or `.tsx` source files.
+
+### 2.7 Authentication
 
 Phases: 1 for all operations except `verifyMFA`; 2 for `verifyMFA`.
 
@@ -293,7 +311,7 @@ Phases: 1 for all operations except `verifyMFA`; 2 for `verifyMFA`.
 
 Registering an existing address, requesting a reset for an unknown address, and logging out without a session are success outcomes, not errors.
 
-### 2.7 AccountManagement
+### 2.8 AccountManagement
 
 Phase: 3.
 
@@ -316,7 +334,7 @@ Phase: 3.
 
 No AccountManagement operation changes session state. `confirmEmailChange` and `revertEmailChange` send no bearer credential even when session state holds one and are not renewal-eligible. A successful email confirmation or reversion clears the refresh cookie service-side; local access-token state changes only through later renewal behavior. `setupMFA` exposes `{ provisioning_uri, secret }` exactly; QR rendering is outside `src/`.
 
-### 2.8 Administration
+### 2.9 Administration
 
 Phase: 4.
 
@@ -350,7 +368,7 @@ No Administration operation changes session state. `bootstrapAdmin` is not renew
 
 `adminCreateUser.status` and `adminUpdateUser.status` may be `"pending"`, `"active"`, or `"locked"` by service contract; the client sends the supplied string and performs no local value validation. Adding an existing group member and removing a non-member are success outcomes.
 
-### 2.9 Authorization
+### 2.10 Authorization
 
 Phase: 1.
 
@@ -364,7 +382,7 @@ Phase: 1.
 
 `hasPermission` returns true only when `claims.permissions` is a list containing the exact permission string. `hasPermissionInAnyForm` returns true when the exact string appears in `permissions` or `scoped_permissions`. `hasPermissionOver` returns true for global authority or for scoped authority when `target_group_ids` and `claims.group_ids` intersect. Null claims, absent lists, non-list values, empty target groups without global authority, and empty holder groups for scoped checks all return false. There are no wildcards, prefixes, hierarchy, or case folding.
 
-### 2.10 React Presentation
+### 2.11 React Presentation
 
 Phase: 1.
 
@@ -375,7 +393,7 @@ TYPE :: Content => React node
 TYPE :: RenderedContent => React rendered output
 
 TYPE :: UserbaseExposure => {
-    client:        CTGUserClient,
+    client:        CTGUserbaseClient,
     session:       SessionState,
     authenticated: bool
 }
@@ -392,7 +410,7 @@ TYPE :: OperationHandle<Args, Result> => {
 
 | Structure | Form | Signature | Phase |
 |---|---|---|---:|
-| `UserbaseProvider` | component | `({ client: CTGUserClient, children: Content }) -> RenderedContent` | 1 |
+| `UserbaseProvider` | component | `({ client: CTGUserbaseClient, children: Content }) -> RenderedContent` | 1 |
 | `RequireSession` | component | `({ children: Content, fallback?: Content }) -> RenderedContent` | 1 |
 | `RequirePermission` | component | `({ permission: string, target_group_ids?: [integer], children: Content, fallback?: Content }) -> RenderedContent` | 1 |
 | `useUserbase` | hook | `(VOID) -> UserbaseExposure` | 1 |
@@ -415,275 +433,329 @@ TYPE :: OperationHandle<Args, Result> => {
 
 ## 3. Method Signatures (Complete)
 
-All signatures use the HM-like notation from `ctg-project-proc/code-styles/js-code-style.md`. Tables above carry operation names; signatures here show concrete JS member names.
+Tables above carry operation names; signatures here show concrete TypeScript member names and exported types. Code comments in implementation still use the HM-like notation required by `ctg-project-proc/code-styles/typescript-code-style.md`, but the normative signatures in this section are TypeScript declarations.
 
-### CTGUserClient
+### CTGUserbaseClient
 
-```javascript
-// CONSTRUCTOR :: Config -> this
-constructor(config)
-
-// :: HTTPMethod, STRING, MAP<STRING, value>?, MAP<STRING, value>?, Credential? -> PROMISE(value | VOID)
-request(method, path, query, body, credential)
-
-// :: VOID -> SessionState
-session()
-
-// :: (SessionState -> VOID) -> (VOID -> VOID)
-subscribe(listener)
-
-// :: VOID -> BOOL
-isSessionActive()
+```typescript
+export default class CTGUserbaseClient {
+    constructor(config: Config);
+    request(
+        method: HTTPMethod,
+        path: string,
+        query?: Record<string, unknown>,
+        body?: Record<string, unknown>,
+        credential?: Credential,
+    ): Promise<unknown | void>;
+    session(): SessionState;
+    subscribe(listener: (session: SessionState) => void): () => void;
+    isSessionActive(): boolean;
+}
 ```
 
 ### ClientError
 
-```javascript
-// CONSTRUCTOR :: STRING | INT -> this
-constructor(typeOrCode)
+```typescript
+export default class ClientError extends Error {
+    readonly type: string;
+    readonly code: number;
+    readonly message: string;
+    readonly status: number | null;
+    readonly service_type: string | null;
+    readonly fields: Record<string, unknown> | null;
+    readonly details: Record<string, unknown> | null;
 
-// :: STRING | INT -> INT | STRING
-static lookup(typeOrCode)
+    constructor(typeOrCode: string | number);
+    static lookup(typeOrCode: string | number): number | string;
+}
 ```
 
-### FetchTransport
+### CTGUserbaseUtil
 
-```javascript
-// CONSTRUCTOR :: VOID -> this
-constructor()
-
-// :: Request -> PROMISE(Response)
-send(request)
+```typescript
+export default class CTGUserbaseUtil {
+    static send(request: Request): Promise<Response>;
+    static now(): number;
+}
 ```
 
-### DateClock
-
-```javascript
-// CONSTRUCTOR :: VOID -> this
-constructor()
-
-// :: VOID -> timestamp
-now()
-```
+Never instantiated; the class object satisfies `Transport` and `Clock`
+structurally and is passed as both configuration values.
 
 ### ScriptedTransport
 
-```javascript
-// CONSTRUCTOR :: [OBJECT] -> this
-constructor(script)
+```typescript
+export interface ScriptedTransportStep {
+    readonly request?: Partial<Request>;
+    readonly response?: Response;
+    readonly error?: unknown;
+}
 
-// :: Request -> PROMISE(Response)
-send(request)
-
-// :: VOID -> [Request]
-requests()
+export default class ScriptedTransport implements Transport {
+    constructor(script: ScriptedTransportStep[]);
+    send(request: Request): Promise<Response>;
+    requests(): Request[];
+}
 ```
 
 ### FixedClock
 
-```javascript
-// CONSTRUCTOR :: timestamp -> this
-constructor(timestamp)
-
-// :: VOID -> timestamp
-now()
-
-// :: timestamp -> VOID
-set(timestamp)
+```typescript
+export default class FixedClock implements Clock {
+    constructor(value: timestamp);
+    now(): timestamp;
+    set(value: timestamp): void;
+}
 ```
 
 ### Authentication
 
-```javascript
-// CONSTRUCTOR :: CTGUserClient -> this
-constructor(client)
+```typescript
+export interface RegisterArgs {
+    email: string;
+    password: string;
+    name?: string | null;
+}
 
-// STATIC :: CTGUserClient -> Authentication
-static init(client)
+export interface TokenArgs {
+    token: string;
+}
 
-// :: { email: STRING, password: STRING, name?: STRING | NULL } -> PROMISE({ status: "verification_sent" })
-register(args)
+export interface LoginArgs {
+    email: string;
+    password: string;
+}
 
-// :: { token: STRING } -> PROMISE(Profile)
-verifyEmail(args)
+export interface VerifyMFAArgs {
+    mfa_token: string;
+    code?: string;
+    recovery_code?: string;
+}
 
-// :: { email: STRING, password: STRING } -> PROMISE(LoginResult)
-login(args)
+export interface ForgotPasswordArgs {
+    email: string;
+}
 
-// :: { mfa_token: STRING, code?: STRING, recovery_code?: STRING } -> PROMISE(Authenticated)
-verifyMFA(args)
+export interface ResetPasswordArgs {
+    token: string;
+    new_password: string;
+    code?: string;
+    recovery_code?: string;
+}
 
-// :: VOID -> PROMISE(Authenticated)
-refresh()
-
-// :: VOID -> PROMISE({ status: "logged_out" })
-logout()
-
-// :: { email: STRING } -> PROMISE({ status: "reset_sent" })
-forgotPassword(args)
-
-// :: { token: STRING, new_password: STRING, code?: STRING, recovery_code?: STRING } -> PROMISE({ status: "password_reset" })
-resetPassword(args)
+export default class Authentication {
+    constructor(client: CTGUserbaseClient);
+    static init(client: CTGUserbaseClient): Authentication;
+    register(args: RegisterArgs): Promise<{ status: "verification_sent" }>;
+    verifyEmail(args: TokenArgs): Promise<Profile>;
+    login(args: LoginArgs): Promise<LoginResult>;
+    verifyMFA(args: VerifyMFAArgs): Promise<Authenticated>;
+    refresh(): Promise<Authenticated>;
+    logout(): Promise<{ status: "logged_out" }>;
+    forgotPassword(args: ForgotPasswordArgs): Promise<{ status: "reset_sent" }>;
+    resetPassword(args: ResetPasswordArgs): Promise<{ status: "password_reset" }>;
+}
 ```
 
 ### AccountManagement
 
-```javascript
-// CONSTRUCTOR :: CTGUserClient -> this
-constructor(client)
+```typescript
+export interface UpdateProfileArgs {
+    name?: string | null;
+}
 
-// STATIC :: CTGUserClient -> AccountManagement
-static init(client)
+export interface ChangePasswordArgs {
+    current_password: string;
+    new_password: string;
+}
 
-// :: VOID -> PROMISE(Profile)
-getProfile()
+export interface RequestEmailChangeArgs {
+    new_email: string;
+    password: string;
+    code?: string;
+    recovery_code?: string;
+}
 
-// :: { name?: STRING | NULL } -> PROMISE(Profile)
-updateProfile(args)
+export interface ConfirmMFAArgs {
+    code: string;
+}
 
-// :: { current_password: STRING, new_password: STRING } -> PROMISE({ status: "password_changed" })
-changePassword(args)
+export interface DisableMFAArgs {
+    password: string;
+    code?: string;
+    recovery_code?: string;
+}
 
-// :: { new_email: STRING, password: STRING, code?: STRING, recovery_code?: STRING } -> PROMISE({ status: "verification_sent" })
-requestEmailChange(args)
+export interface IdStringArgs {
+    id: string;
+}
 
-// :: { token: STRING } -> PROMISE(Profile)
-confirmEmailChange(args)
-
-// :: { token: STRING } -> PROMISE({ status: "reverted" })
-revertEmailChange(args)
-
-// :: VOID -> PROMISE({ provisioning_uri: STRING, secret: STRING })
-setupMFA()
-
-// :: { code: STRING } -> PROMISE({ recovery_codes: [STRING] })
-confirmMFA(args)
-
-// :: { password: STRING, code?: STRING, recovery_code?: STRING } -> PROMISE(Profile)
-disableMFA(args)
-
-// :: VOID -> PROMISE([SessionSummary])
-listSessions()
-
-// :: { id: STRING } -> PROMISE(VOID)
-revokeSession(args)
-
-// :: VOID -> PROMISE({ status: "revoked", count: INT })
-revokeOtherSessions()
+export default class AccountManagement {
+    constructor(client: CTGUserbaseClient);
+    static init(client: CTGUserbaseClient): AccountManagement;
+    getProfile(): Promise<Profile>;
+    updateProfile(args: UpdateProfileArgs): Promise<Profile>;
+    changePassword(args: ChangePasswordArgs): Promise<{ status: "password_changed" }>;
+    requestEmailChange(args: RequestEmailChangeArgs): Promise<{ status: "verification_sent" }>;
+    confirmEmailChange(args: TokenArgs): Promise<Profile>;
+    revertEmailChange(args: TokenArgs): Promise<{ status: "reverted" }>;
+    setupMFA(): Promise<{ provisioning_uri: string; secret: string }>;
+    confirmMFA(args: ConfirmMFAArgs): Promise<{ recovery_codes: string[] }>;
+    disableMFA(args: DisableMFAArgs): Promise<Profile>;
+    listSessions(): Promise<SessionSummary[]>;
+    revokeSession(args: IdStringArgs): Promise<void>;
+    revokeOtherSessions(): Promise<{ status: "revoked"; count: number }>;
+}
 ```
 
 ### Administration
 
-```javascript
-// CONSTRUCTOR :: CTGUserClient -> this
-constructor(client)
+```typescript
+export interface BootstrapAdminArgs {
+    secret: string;
+    email: string;
+    password: string;
+}
 
-// STATIC :: CTGUserClient -> Administration
-static init(client)
+export interface AdminListUsersArgs {
+    limit?: number;
+    offset?: number;
+}
 
-// :: { secret: STRING, email: STRING, password: STRING } -> PROMISE(Profile)
-bootstrapAdmin(args)
+export interface AdminCreateUserArgs {
+    email: string;
+    password: string;
+    name?: string | null;
+    roles?: string[];
+    status?: string;
+    email_verified?: boolean;
+}
 
-// :: { limit?: INT, offset?: INT } -> PROMISE([Profile])
-adminListUsers(args)
+export interface AdminUpdateUserArgs {
+    id: string;
+    name?: string | null;
+    status?: string;
+    roles?: string[];
+}
 
-// :: { id: STRING } -> PROMISE(Profile)
-adminGetUser(args)
+export interface RoleArgs {
+    name: string;
+    permissions: string[];
+    scoped: boolean;
+}
 
-// :: { email: STRING, password: STRING, name?: STRING | NULL, roles?: [STRING], status?: STRING, email_verified?: BOOL } -> PROMISE(Profile)
-adminCreateUser(args)
+export interface NameArgs {
+    name: string;
+}
 
-// :: { id: STRING, name?: STRING | NULL, status?: STRING, roles?: [STRING] } -> PROMISE(Profile)
-adminUpdateUser(args)
+export interface UpdatePermissionArgs {
+    name: string;
+    new_name: string;
+}
 
-// :: { id: STRING } -> PROMISE(VOID)
-adminDeleteUser(args)
+export interface IdNumberArgs {
+    id: number;
+}
 
-// :: VOID -> PROMISE([RoleEntry])
-listRoles()
+export interface CreateGroupArgs {
+    name: string;
+    roles?: string[];
+}
 
-// :: { name: STRING, permissions: [STRING], scoped: BOOL } -> PROMISE(RoleEntry)
-createRole(args)
+export interface UpdateGroupArgs {
+    id: number;
+    name?: string;
+    roles?: string[];
+}
 
-// :: { name: STRING, permissions: [STRING], scoped: BOOL } -> PROMISE(RoleEntry)
-updateRole(args)
+export interface GroupMemberArgs {
+    id: number;
+    user_id: string;
+}
 
-// :: { name: STRING } -> PROMISE(VOID)
-deleteRole(args)
-
-// :: VOID -> PROMISE([PermissionEntry])
-listPermissions()
-
-// :: { name: STRING } -> PROMISE(PermissionEntry)
-createPermission(args)
-
-// :: { name: STRING, new_name: STRING } -> PROMISE(PermissionEntry)
-updatePermission(args)
-
-// :: { name: STRING } -> PROMISE(VOID)
-deletePermission(args)
-
-// :: VOID -> PROMISE([GroupEntry])
-listGroups()
-
-// :: { id: INT } -> PROMISE(GroupEntry)
-getGroup(args)
-
-// :: { name: STRING, roles?: [STRING] } -> PROMISE(GroupEntry)
-createGroup(args)
-
-// :: { id: INT, name?: STRING, roles?: [STRING] } -> PROMISE(GroupEntry)
-updateGroup(args)
-
-// :: { id: INT } -> PROMISE(VOID)
-deleteGroup(args)
-
-// :: { id: INT, user_id: STRING } -> PROMISE({ status: "member_added" })
-addGroupMember(args)
-
-// :: { id: INT, user_id: STRING } -> PROMISE(VOID)
-removeGroupMember(args)
+export default class Administration {
+    constructor(client: CTGUserbaseClient);
+    static init(client: CTGUserbaseClient): Administration;
+    bootstrapAdmin(args: BootstrapAdminArgs): Promise<Profile>;
+    adminListUsers(args: AdminListUsersArgs): Promise<Profile[]>;
+    adminGetUser(args: IdStringArgs): Promise<Profile>;
+    adminCreateUser(args: AdminCreateUserArgs): Promise<Profile>;
+    adminUpdateUser(args: AdminUpdateUserArgs): Promise<Profile>;
+    adminDeleteUser(args: IdStringArgs): Promise<void>;
+    listRoles(): Promise<RoleEntry[]>;
+    createRole(args: RoleArgs): Promise<RoleEntry>;
+    updateRole(args: RoleArgs): Promise<RoleEntry>;
+    deleteRole(args: NameArgs): Promise<void>;
+    listPermissions(): Promise<PermissionEntry[]>;
+    createPermission(args: NameArgs): Promise<PermissionEntry>;
+    updatePermission(args: UpdatePermissionArgs): Promise<PermissionEntry>;
+    deletePermission(args: NameArgs): Promise<void>;
+    listGroups(): Promise<GroupEntry[]>;
+    getGroup(args: IdNumberArgs): Promise<GroupEntry>;
+    createGroup(args: CreateGroupArgs): Promise<GroupEntry>;
+    updateGroup(args: UpdateGroupArgs): Promise<GroupEntry>;
+    deleteGroup(args: IdNumberArgs): Promise<void>;
+    addGroupMember(args: GroupMemberArgs): Promise<{ status: "member_added" }>;
+    removeGroupMember(args: GroupMemberArgs): Promise<void>;
+}
 ```
 
 ### Authorization
 
-```javascript
-// CONSTRUCTOR :: VOID -> this
-constructor()
-
-// STATIC :: VOID -> Authorization
-static init()
-
-// :: Claims | NULL, STRING -> BOOL
-hasPermission(claims, permission)
-
-// :: Claims | NULL, STRING -> BOOL
-hasPermissionInAnyForm(claims, permission)
-
-// :: Claims | NULL, STRING, [INT] -> BOOL
-hasPermissionOver(claims, permission, targetGroupIds)
+```typescript
+export default class Authorization {
+    constructor();
+    static init(): Authorization;
+    hasPermission(claims: Claims | null, permission: string): boolean;
+    hasPermissionInAnyForm(claims: Claims | null, permission: string): boolean;
+    hasPermissionOver(claims: Claims | null, permission: string, targetGroupIds: number[]): boolean;
+}
 ```
 
 ### React Presentation
 
-```javascript
-// COMPONENT :: { client: CTGUserClient, children: Content } -> RenderedContent
-UserbaseProvider(props)
+```typescript
+export type Content = React.ReactNode;
+export type RenderedContent = React.ReactElement | null;
 
-// COMPONENT :: { children: Content, fallback?: Content } -> RenderedContent
-RequireSession(props)
+export interface UserbaseExposure {
+    client: CTGUserbaseClient;
+    session: SessionState;
+    authenticated: boolean;
+}
 
-// COMPONENT :: { permission: STRING, target_group_ids?: [INT], children: Content, fallback?: Content } -> RenderedContent
-RequirePermission(props)
+export type Operation<Args, Result> = (args: Args) => Promise<Result>;
 
-// HOOK :: VOID -> UserbaseExposure
-useUserbase()
+export interface OperationHandle<Args, Result> {
+    run(args: Args): Promise<void>;
+    readonly pending: boolean;
+    readonly result: Result | null;
+    readonly error: ClientError | null;
+}
 
-// HOOK :: STRING, [INT]? -> BOOL
-usePermission(permission, targetGroupIds)
+export interface UserbaseProviderProps {
+    client: CTGUserbaseClient;
+    children: Content;
+}
 
-// HOOK :: Operation<Args, Result> -> OperationHandle<Args, Result>
-useOperation(operation)
+export interface RequireSessionProps {
+    children: Content;
+    fallback?: Content;
+}
+
+export interface RequirePermissionProps {
+    permission: string;
+    target_group_ids?: number[];
+    children: Content;
+    fallback?: Content;
+}
+
+export function UserbaseProvider(props: UserbaseProviderProps): RenderedContent;
+export function RequireSession(props: RequireSessionProps): RenderedContent;
+export function RequirePermission(props: RequirePermissionProps): RenderedContent;
+export function useUserbase(): UserbaseExposure;
+export function usePermission(permission: string, targetGroupIds?: number[]): boolean;
+export function useOperation<Args, Result>(operation: Operation<Args, Result>): OperationHandle<Args, Result>;
 ```
 
 ---
@@ -692,16 +764,20 @@ useOperation(operation)
 
 ### 4.1 Constructor and Export Policy
 
-Root `index.js` exports `CTGUserClient`, `ClientError`, `FetchTransport`, `DateClock`, `Authentication`, `AccountManagement`, `Administration`, `Authorization`, and the six React presentation structures. `ScriptedTransport` and `FixedClock` live under `tests/support` and are test support only.
+Root `index.ts` exports `CTGUserbaseClient`, `ClientError`, `CTGUserbaseUtil`, `Authentication`, `AccountManagement`, `Administration`, `Authorization`, and the six React presentation structures. It also exports the public types from `src/core/types.ts`. `ScriptedTransport` and `FixedClock` live under `tests/support` and are test support only.
 
-Class files follow the JS code style: imports first, class purpose comment, `export default class ClassName`, `_` instance fields, static fields before instance fields, constructor before properties and methods, and a static `init` factory on every operation-group class.
+`package.json` declares `"types"` for the emitted declaration entry, exports package entry points from `dist/`, and adds `build` for `tsc` plus `check:types` for type-only checking. Package consumers read emitted JavaScript and declarations from `dist/`; tests exercise source.
+
+Class files follow the TypeScript code style: commented imports first, file-local type/interface declarations when needed, class purpose comment, `export default class ClassName`, `_` private instance fields, static fields before instance fields, constructor before properties and methods, section headers for method groups, HM-like signature comments on all methods, and a static `init` factory where applicable. Public API types use `unknown`, never `any`, for unknown-shaped values.
+
+Test suites import the source with NodeNext `.js` specifiers, so Vitest resolves those imports to the matching `.ts` or `.tsx` files during tests.
 
 ### 4.2 Operation Group Application
 
 Service-backed operation groups are not client properties. They are applied explicitly, by construction:
 
-```javascript
-const client = new CTGUserClient({ base_url, transport, clock });
+```typescript
+const client = new CTGUserbaseClient({ base_url, transport, clock });
 const auth = Authentication.init(client);
 const account = AccountManagement.init(client);
 const admin = Administration.init(client);
@@ -710,24 +786,43 @@ const authorization = Authorization.init();
 
 Two applications of the same group to one client share that client's session and renewal. Two clients built from the same configuration have isolated state. Application-defined operation groups use the same class form:
 
-```javascript
+```typescript
 export default class Reports {
+    private readonly _client: CTGUserbaseClient;
 
-    static init(client) {
-        return new Reports(client);
-    }
-
-    constructor(client) {
+    // CONSTRUCTOR :: CTGUserbaseClient -> this
+    // Creates a Reports operation group over the supplied client
+    constructor(client: CTGUserbaseClient) {
         this._client = client;
     }
 
-    list(args = {}) {
+    /**
+     *
+     * Instance Methods
+     *
+     */
+
+    // :: * -> PROMISE(* | VOID)
+    // Lists reports through the shared request primitive
+    list(args: Record<string, unknown> = {}): Promise<unknown | void> {
         return this._client.request("GET", "/reports", args, undefined, "session");
+    }
+
+    /**
+     *
+     * Static Methods
+     *
+     */
+
+    // Static Factory Method :: CTGUserbaseClient -> reports
+    // Creates a Reports operation group over the supplied client
+    static init(client: CTGUserbaseClient): Reports {
+        return new Reports(client);
     }
 }
 ```
 
-Application-defined groups take the same shape — a class constructed over the client — and must target the same deployment and response convention because they use `CTGUserClient.request`.
+Application-defined groups take the same shape — a class constructed over the client — and must target the same deployment and response convention because they use `CTGUserbaseClient.request`.
 
 ### 4.3 Response Classification
 
@@ -750,18 +845,18 @@ Status 204 returns `VOID` without parsing the body.
 | Case Group | Suite | Phase |
 |---|---|---:|
 | client surface, construction, session observation, request building, response classification, errors, claim decoding, renewal single-flight | `tests/api` with scripted transport and fixed clock | 1 |
-| Authentication except `verifyMFA` | `tests/api` with scripted transport and fixed clock; live staging api cases where endpoint behavior is required | 1 |
-| Endpoint conventions and Authentication endpoint mapping except `verifyMFA` | `tests/api` against live staging | 1 |
+| Authentication except `verifyMFA` | `tests/api` with scripted transport and fixed clock; `tests/live` where endpoint behavior is required | 1 |
+| Endpoint conventions and Authentication endpoint mapping except `verifyMFA` | `tests/live` against live staging | 1 |
 | Presentation provider, gates, hooks, operation hook, DOM-is-the-proof assertions, no QR in `src/` | `tests/react` | 1 |
 | Credential lifecycle same-site renewal, logout cookie behavior, browser-held refresh cookie behavior | `tests/browser` against same-site staging | 1 |
-| `verifyMFA` Core behavior and endpoint mapping | `tests/api` scripted and live staging with seeded TOTP-enabled user | 2 |
-| AccountManagement Core behavior and endpoint mapping, including MFA enrollment and email-change flows | `tests/api` scripted and live staging | 3 |
+| `verifyMFA` Core behavior and endpoint mapping | `tests/api` scripted and `tests/live` with seeded TOTP-enabled user | 2 |
+| AccountManagement Core behavior and endpoint mapping, including MFA enrollment and email-change flows | `tests/api` scripted and `tests/live` | 3 |
 | Credential-lifecycle browser tests for email change, MFA enrollment, and same-site renewal after account changes | `tests/browser` same-site | 3 |
 | Authorization pure predicates | `tests/api` or unit subset using `ctg-js-test`; no transport and no clock applications | 1 |
 | Authorization-backed presentation gates | `tests/react` DOM-is-the-proof | 1 |
-| Administration Core behavior and endpoint mapping | `tests/api` scripted and live staging with seeded administrator | 4 |
+| Administration Core behavior and endpoint mapping | `tests/api` scripted and `tests/live` with seeded administrator | 4 |
 
-The api suite is cross-origin and cannot exercise renewal through the refresh cookie. Renewal machinery is proven with scripted transport in the api suite; credential-lifecycle renewal is owned by same-site browser tests. Endpoint cases are live-staging api cases against the pinned service.
+All four test suites use TypeScript: `.ts` for non-JSX tests and `.tsx` where React JSX fixtures are present. The api and live suites are cross-origin and cannot exercise renewal through the refresh cookie. Renewal machinery is proven with scripted transport in the api suite; credential-lifecycle renewal is owned by same-site browser tests. Endpoint cases are live-staging cases against the pinned service.
 
 ### 4.5 Endpoint Contract
 
@@ -779,11 +874,11 @@ The client validates construction and presentation context only. It does not val
 
 | Anti-Pattern | Enforcement |
 |---|---|
-| refresh credential in JS | No property, operation, result, or error exposes it. |
-| persisted access token or claims | `CTGUserClient` starts empty and reads no store. |
+| refresh credential in TypeScript/runtime | No property, operation, result, or error exposes it. |
+| persisted access token or claims | `CTGUserbaseClient` starts empty and reads no store. |
 | proactive renewal | Only eligible 401 failures can start renewal. |
 | retry beyond one renewal replay | One renewal and one replay; replay result is final. |
-| renewal inside categories | Only `CTGUserClient.request` owns renewal. |
+| renewal inside categories | Only `CTGUserbaseClient.request` owns renewal. |
 | wide client with category methods | Client surface is constructor, `request`, `session`, `subscribe`, `isSessionActive`. |
 | category structures as client properties | No `authentication`, `accountManagement`, `administration`, or `authorization` property exists. |
 | client subclassing for operations | Operation groups are classes constructed over a client; the client is never subclassed. |
@@ -800,32 +895,33 @@ The client validates construction and presentation context only. It does not val
 
 | Surface | Mechanism | Phase |
 |---|---|---:|
-| application-defined service operation groups | class whose constructor accepts `CTGUserClient`, using `client.request` | 1 |
+| application-defined service operation groups | class whose constructor accepts `CTGUserbaseClient`, using `client.request` | 1 |
 | custom transport | object with `send(Request) -> PROMISE<Response>` supplied to constructor | 1 |
 | custom clock | object with `now() -> timestamp` supplied to constructor | 1 |
 | React operation execution | `useOperation` accepts any promise-returning operation, including application-defined group operations | 1 |
-| application screens | `app/` workbench and application code compose the public surface | 1-5 |
+| application screens | TypeScript `app/` workbench and application code compose the public surface | 1-5 |
 
-Extensions do not mutate session state except through Authentication operations and renewal. They do not read or store the refresh credential. They do not add methods to `CTGUserClient` by subclassing.
+Extensions do not mutate session state except through Authentication operations and renewal. They do not read or store the refresh credential. They do not add methods to `CTGUserbaseClient` by subclassing.
 
 ---
 
 ## 7. Judgment Calls Index
 
-1. **Client class named `CTGUserClient`** (§1) — ruled by the user; CTG prefix applied, holder named for the user; supersedes `SessionClient`.
+1. **Client class named `CTGUserbaseClient`** (§1) — ruled by the user; CTG prefix applied, holder named for the user; supersedes `SessionClient`.
 2. **Operation groups as classes** (§1) — ruled by the user: constructor accepts the client, static `init` factory; same-session double application and app-group symmetry hold; supersedes the drafted factory-function call.
 3. **Authorization as a class** (§1) — nullary constructor plus `init()`; standalone and client-free; extends the Q2 ruling for idiom consistency.
-4. **Production bindings named `FetchTransport` and `DateClock`** (§1) — ratified; names the browser HTTP and `Date` clock bindings without hiding declared operations in the client.
+4. **Production bindings as `CTGUserbaseUtil`** (§1) — ruled; one stateless static singleton for both declared operations, superseding the `FetchTransport`/`DateClock` ratification; client renamed `CTGUserbaseClient` in the same ruling.
 5. **`useOperation` takes the operation directly** (§1) — ruled by the user; `OperationSelection` deleted; the hook is a pure async state machine and needs no provider.
-6. **React content prop is `children`** (§2.10) — ratified; binds the design's runtime-neutral `content` slot to idiomatic React.
+6. **React content prop is `children`** (§2.11) — ratified; binds the design's runtime-neutral `content` slot to idiomatic React.
+7. **TypeScript throughout** (§1, §2.1, §2.2, §2.6, §3, §4.1) — ruled by the user; source, tests, and workbench are `.ts`/`.tsx`; existing test frameworks and the `ctg-js-userbase` name remain unchanged.
 
 ---
 
 ## 8. Resolved Questions
 
-### Q1: Is `CTGUserClient` the class name?
+### Q1: Is `CTGUserbaseClient` the class name?
 
-Yes — ruled. `CTGUserClient` is the JS class name for the design `client` structure, superseding the earlier recorded intended name `SessionClient`.
+Yes — ruled. `CTGUserbaseClient` is the TypeScript class name for the design `client` structure. It superseded `CTGUserClient` (family consistency with `UserbaseProvider`/`useUserbase`), which had superseded the earlier recorded intended name `SessionClient`.
 
 ### Q2: Are operation categories classes?
 
@@ -837,7 +933,7 @@ No. `Authorization()` is standalone. React presentation may pair it with the cur
 
 ### Q4: Where do production and test declared operations live?
 
-Production bindings are `src/core/transports/FetchTransport.js` and `src/core/clocks/DateClock.js`. Test doubles are `tests/support/ScriptedTransport.js` and `tests/support/FixedClock.js`.
+The production binding is `src/core/CTGUserbaseUtil.ts` (both declared operations as statics). Test doubles are `tests/support/ScriptedTransport.ts` and `tests/support/FixedClock.ts`.
 
 ### Q5: What does `useOperation` take?
 
@@ -847,30 +943,46 @@ Ruled: the operation itself — any promise-returning function, typically bound 
 
 Scripted renewal logic is in `tests/api`. Cookie-credentialed renewal is same-site and belongs to `tests/browser`; the cross-origin live api suite cannot exercise it.
 
+### Q7: Is the library TypeScript?
+
+Yes — ruled. The library is TypeScript throughout: `src/` uses `.ts` and `.tsx`, all four test suites use `.ts` and `.tsx` on the existing `ctg-js-test`, `ctg-react-test`, and `ctg-js-browser-test` frameworks, and the workbench remains Vite but TypeScript. `ctg-ts-test` is not involved, and the repository/package name remains `ctg-js-userbase`.
+
 ---
 
 ## Report
 
-1. Line count: 877
-2. Judgment calls:
-   - `CTGUserClient` without `CTG` prefix.
-   - Operation groups as classes (ruled).
-   - Authorization as a factory function.
-   - Production bindings named `FetchTransport` and `DateClock`.
-   - `useOperation` takes the operation directly (ruled; OperationSelection deleted).
+1. Sections touched:
+   - Header metadata: target, code style, and test-framework language.
+   - §1 Realization Map: module extensions, `src/core/types.ts`, and the TypeScript-throughout ruling.
+   - §2.1 Package Layout: `.ts` / `.tsx` layout, `index.ts`, `tsconfig.json`, generated `dist/`, and `tests/live`.
+   - §2.2 Types: TypeScript realization statement and strict public-surface posture.
+   - §2.6 TypeScript Tooling: new subsection for package and workbench TypeScript configuration plus existing-framework test imports.
+   - §2.7-§2.11: renumbered only because Tooling was inserted.
+   - §3 Method Signatures: JS/comment signatures replaced with TypeScript declarations.
+   - §4.1 Constructor and Export Policy: `index.ts`, type exports, package `"types"`, `dist/` exports, `build`, `check:types`, and source-test import policy.
+   - §4.2 Operation Group Application: examples rewritten as TypeScript.
+   - §4.4 Testing Ownership by Phase: all four suites as `.ts` / `.tsx`, live suite named explicitly.
+   - §6 Extension Surfaces: workbench called TypeScript.
+   - §7 and §8: TypeScript judgment call and Q7 resolved question added.
+   - §5 Anti-Pattern Enforcement and Report: language labels updated.
+2. Code-style conflicts flagged, not resolved:
+   - `ctg-project-proc/code-styles/typescript-code-style.md` says to use a private constructor with `static init` for controlled construction. This spec preserves the ruled public construction form (`new Authentication(client)`, `new AccountManagement(client)`, `new Administration(client)`, `new Authorization()`, and direct client construction).
+   - The TypeScript style's HM comment notation uses uppercase native type names and its own map notation guidance. The §2.2 design-notation block uses the design contract's lowercase `string` / `integer` / `bool` and `MAP<...>` notation and was kept verbatim by ruling.
+3. Judgment calls:
+   - `CTGUserbaseClient` with CTG prefix.
+   - Operation groups as classes with constructor plus `init`.
+   - Authorization as a standalone class.
+   - Production bindings as `CTGUserbaseUtil` statics (ruled; supersedes FetchTransport/DateClock).
+   - `useOperation` takes the operation directly; `OperationSelection` remains deleted.
    - React content prop is `children`.
-3. Design gaps found:
-   - Category application form was intentionally left to the language specification.
-   - Production binding names and module paths for `Transport` and `Clock` were intentionally left to the language specification.
-   - React prop naming for the content slot was not fixed by the rendering-runtime-neutral presentation design.
+   - TypeScript throughout; existing test frameworks unchanged; `ctg-ts-test` not involved; name remains `ctg-js-userbase`.
 4. Class-name table:
 
-| Design structure | JS class/function name |
+| Design structure | TypeScript class/function name |
 |---|---|
-| `client` | `CTGUserClient` |
+| `client` | `CTGUserbaseClient` |
 | `ClientError` | `ClientError` |
-| `Transport` production binding | `FetchTransport` |
-| `Clock` production binding | `DateClock` |
+| `Transport` + `Clock` production binding | `CTGUserbaseUtil` (statics) |
 | `Authentication(client)` | `Authentication` |
 | `AccountManagement(client)` | `AccountManagement` |
 | `Administration(client)` | `Administration` |
@@ -883,6 +995,3 @@ Scripted renewal logic is in `tests/api`. Cookie-credentialed renewal is same-si
 | `useOperation` | `useOperation` |
 | scripted transport test double | `ScriptedTransport` |
 | fixed clock test double | `FixedClock` |
-
-5. Could not specify:
-   - (resolved by ruling) invalid input to `useOperation` is a non-function argument: `CONFIGURATION_INVALID`, `details.field: "operation"`, at hook application.
