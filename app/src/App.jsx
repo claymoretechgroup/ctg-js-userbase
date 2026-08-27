@@ -49,10 +49,21 @@ function OperationStatus({ operation, successLabel }) {
     return <p className="status">{successLabel}: {formatValue(operation.result.status ?? "ok")}</p>;
 }
 
-function LoginForm({ auth }) {
+// Wraps an Authenticated-returning operation so the Profile it carries is
+// lifted into App state before any gate unmounts the calling component
+// (claims carry no email; the result's user is the only profile source).
+const liftingProfile = (operation, onProfile) => async (args) => {
+    const result = await operation(args);
+    if (result?.user !== undefined && onProfile) {
+        onProfile(result.user);
+    }
+    return result;
+};
+
+function LoginForm({ auth, onProfile }) {
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
-    const login = useOperation((args) => auth.login(args));
+    const login = useOperation(liftingProfile((args) => auth.login(args), onProfile));
 
     const submit = (event) => {
         event.preventDefault();
@@ -174,8 +185,8 @@ function ForgotPasswordForm({ auth }) {
     );
 }
 
-function SignedOutView({ auth }) {
-    const recover = useOperation(() => auth.refresh());
+function SignedOutView({ auth, onProfile }) {
+    const recover = useOperation(liftingProfile(() => auth.refresh(), onProfile));
 
     return (
         <main>
@@ -194,7 +205,7 @@ function SignedOutView({ auth }) {
 
             <div className="grid">
                 <div className="login-column">
-                    <LoginForm auth={auth} />
+                    <LoginForm auth={auth} onProfile={onProfile} />
                 </div>
                 <RegisterForm auth={auth} />
                 <ForgotPasswordForm auth={auth} />
@@ -203,9 +214,9 @@ function SignedOutView({ auth }) {
     );
 }
 
-function SessionPanel({ auth }) {
+function SessionPanel({ auth, profile, onProfile }) {
     const { client, session, authenticated } = useUserbase();
-    const refresh = useOperation(() => auth.refresh());
+    const refresh = useOperation(liftingProfile(() => auth.refresh(), onProfile));
     const logout = useOperation(() => auth.logout());
     const claims = session.claims ?? {};
 
@@ -221,7 +232,7 @@ function SessionPanel({ auth }) {
                 <dl>
                     <div>
                         <dt>Email</dt>
-                        <dd>{formatValue(claims.email ?? claims.email_address)}</dd>
+                        <dd>{formatValue(profile?.email ?? claims.sub)}</dd>
                     </div>
                     <div>
                         <dt>Authenticated</dt>
@@ -257,9 +268,10 @@ function SessionPanel({ auth }) {
 }
 
 export default function App({ auth }) {
+    const [profile, setProfile] = useState(null);
     return (
-        <RequireSession fallback={<SignedOutView auth={auth} />}>
-            <SessionPanel auth={auth} />
+        <RequireSession fallback={<SignedOutView auth={auth} onProfile={setProfile} />}>
+            <SessionPanel auth={auth} profile={profile} onProfile={setProfile} />
         </RequireSession>
     );
 }
