@@ -2,7 +2,7 @@
 
 import { describe, it, expect } from "vitest";
 import { CTGTest, CTGTestPredicates, CTGTestResult } from "ctg-js-test";
-import CTGUserClient from "../../src/core/CTGUserClient.js";
+import CTGUserbaseClient from "../../src/core/CTGUserbaseClient.js";
 import Authentication from "../../src/core/Authentication.js";
 import AccountManagement from "../../src/core/AccountManagement.js";
 import ScriptedTransport from "../support/ScriptedTransport.js";
@@ -10,13 +10,13 @@ import FixedClock from "../support/FixedClock.js";
 
 const { STATUS } = CTGTestResult;
 
-const success = (result, status = 200) => ({
+const success = (result: unknown, status = 200) => ({
     status,
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ success: true, result })
 });
 
-const failure = (status, result) => ({
+const failure = (status: number, result: unknown) => ({
     status,
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ success: false, result })
@@ -28,8 +28,8 @@ const noContent = () => ({
     body: ""
 });
 
-const tokenFor = (claims) => {
-    const encode = (value) => Buffer.from(JSON.stringify(value)).toString("base64url");
+const tokenFor = (claims: TestClaims) => {
+    const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url");
     return `${encode({ alg: "none" })}.${encode(claims)}.signature`;
 };
 
@@ -49,13 +49,13 @@ const sessions = [
     { id: "s1", ip: "127.0.0.1", user_agent: "UA", created_at: 1000, last_used_at: 1100, current: true }
 ];
 
-const makeClient = (script) => {
+const makeClient = (script: TestScriptEntry[]) => {
     const transport = ScriptedTransport.init(script);
-    const client = new CTGUserClient({ base_url: "https://s", transport, clock: FixedClock.init(1000) });
+    const client = new CTGUserbaseClient({ base_url: "https://s", transport, clock: FixedClock.init(1000) });
     return { client, transport, auth: Authentication.init(client), account: AccountManagement.init(client) };
 };
 
-const makeSeededClient = async (script) => {
+const makeSeededClient = async (script: TestScriptEntry[]) => {
     const setup = makeClient([
         { response: success(authenticated) },
         ...script
@@ -64,16 +64,16 @@ const makeSeededClient = async (script) => {
     return setup;
 };
 
-const rejectValue = async (promise) => {
+const rejectValue = async (promise: TestPromise): Promise<TestErrorShape | null> => {
     try {
         await promise;
         return null;
     } catch (error) {
-        return error;
+        return error as TestErrorShape;
     }
 };
 
-const afterSeed = (transport) => transport.requests().slice(1);
+const afterSeed = (transport: TestScriptedTransport) => transport.requests().slice(1);
 
 describe("account management conformance", () => {
 
@@ -86,11 +86,11 @@ describe("account management conformance", () => {
                 const result = await account.getProfile();
                 return { result, session: client.session() };
             })
-            .assert("profile read", (state) => state.subject, CTGTestPredicates.equals({
+            .assert("profile read", (state) => state.subject, CTGTestPredicates.equals<unknown>({
                 result: profile,
                 session: { access_token: token, claims }
             }))
-            .start();
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -103,8 +103,8 @@ describe("account management conformance", () => {
                 ]);
                 return await account.listSessions();
             })
-            .assert("sessions returned", (state) => state.subject, CTGTestPredicates.equals(sessions))
-            .start();
+            .assert("sessions returned", (state) => state.subject, CTGTestPredicates.equals<unknown>(sessions))
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -116,7 +116,7 @@ describe("account management conformance", () => {
                     { response: noContent() }
                 ]);
                 const result = await account.revokeSession({ id: "s1" });
-                const request = afterSeed(transport)[0];
+                const request = transport.requestAt(1);
                 return {
                     result,
                     request: {
@@ -127,7 +127,7 @@ describe("account management conformance", () => {
                     }
                 };
             })
-            .assert("void revoke", (state) => state.subject, CTGTestPredicates.equals({
+            .assert("void revoke", (state) => state.subject, CTGTestPredicates.equals<unknown>({
                 result: undefined,
                 request: {
                     method: "DELETE",
@@ -136,7 +136,7 @@ describe("account management conformance", () => {
                     body: null
                 }
             }))
-            .start();
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -150,11 +150,11 @@ describe("account management conformance", () => {
                 const result = await account.revokeOtherSessions();
                 return { result, session: client.session() };
             })
-            .assert("other sessions revoked", (state) => state.subject, CTGTestPredicates.equals({
+            .assert("other sessions revoked", (state) => state.subject, CTGTestPredicates.equals<unknown>({
                 result: { status: "revoked", count: 2 },
                 session: { access_token: token, claims }
             }))
-            .start();
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -166,7 +166,7 @@ describe("account management conformance", () => {
                     { response: success(updatedProfile) }
                 ]);
                 const result = await account.confirmEmailChange({ token: "email-token" });
-                const request = afterSeed(transport)[0];
+                const request = transport.requestAt(1);
                 return {
                     result,
                     authorization: request.headers?.Authorization,
@@ -174,13 +174,13 @@ describe("account management conformance", () => {
                     session: client.session()
                 };
             })
-            .assert("email token credential", (state) => state.subject, CTGTestPredicates.equals({
+            .assert("email token credential", (state) => state.subject, CTGTestPredicates.equals<unknown>({
                 result: updatedProfile,
                 authorization: undefined,
                 body: JSON.stringify({ token: "email-token" }),
                 session: { access_token: token, claims }
             }))
-            .start();
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -192,7 +192,7 @@ describe("account management conformance", () => {
                     { response: success({ status: "reverted" }) }
                 ]);
                 const result = await account.revertEmailChange({ token: "revert-token" });
-                const request = afterSeed(transport)[0];
+                const request = transport.requestAt(1);
                 return {
                     result,
                     authorization: request.headers?.Authorization,
@@ -200,13 +200,13 @@ describe("account management conformance", () => {
                     session: client.session()
                 };
             })
-            .assert("revert token credential", (state) => state.subject, CTGTestPredicates.equals({
+            .assert("revert token credential", (state) => state.subject, CTGTestPredicates.equals<unknown>({
                 result: { status: "reverted" },
                 authorization: undefined,
                 body: JSON.stringify({ token: "revert-token" }),
                 session: { access_token: token, claims }
             }))
-            .start();
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -233,12 +233,12 @@ describe("account management conformance", () => {
                     details: error?.details
                 };
             })
-            .assert("policy details surfaced", (state) => state.subject, CTGTestPredicates.equals({
+            .assert("policy details surfaced", (state) => state.subject, CTGTestPredicates.equals<unknown>({
                 type: "SERVICE_ERROR",
                 service_type: "PASSWORD_POLICY_VIOLATION",
                 details: { failed: ["length"] }
             }))
-            .start();
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -252,8 +252,8 @@ describe("account management conformance", () => {
                 ]);
                 return await account.confirmMFA({ code: "123456" });
             })
-            .assert("recovery codes returned", (state) => state.subject, CTGTestPredicates.equals(recovery))
-            .start();
+            .assert("recovery codes returned", (state) => state.subject, CTGTestPredicates.equals<unknown>(recovery))
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -265,10 +265,10 @@ describe("account management conformance", () => {
                     { response: success(profile) }
                 ]);
                 await account.updateProfile({});
-                return afterSeed(transport)[0].body;
+                return transport.requestAt(1).body;
             })
-            .assert("empty body", (state) => state.subject, CTGTestPredicates.equals(JSON.stringify({})))
-            .start();
+            .assert("empty body", (state) => state.subject, CTGTestPredicates.equals<unknown>(JSON.stringify({})))
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });

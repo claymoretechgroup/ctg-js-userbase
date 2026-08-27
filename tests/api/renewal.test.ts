@@ -2,29 +2,30 @@
 
 import { describe, it, expect } from "vitest";
 import { CTGTest, CTGTestPredicates, CTGTestResult } from "ctg-js-test";
-import CTGUserClient from "../../src/core/CTGUserClient.js";
+import CTGUserbaseClient from "../../src/core/CTGUserbaseClient.js";
 import Authentication from "../../src/core/Authentication.js";
 import AccountManagement from "../../src/core/AccountManagement.js";
 import Administration from "../../src/core/Administration.js";
+import type { Authenticated } from "../../src/core/types.js";
 import ScriptedTransport from "../support/ScriptedTransport.js";
 import FixedClock from "../support/FixedClock.js";
 
 const { STATUS } = CTGTestResult;
 
-const success = (result) => ({
+const success = (result: unknown) => ({
     status: 200,
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ success: true, result })
 });
 
-const failure = (status, result) => ({
+const failure = (status: number, result: unknown) => ({
     status,
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ success: false, result })
 });
 
-const tokenFor = (claims) => {
-    const encode = (value) => Buffer.from(JSON.stringify(value)).toString("base64url");
+const tokenFor = (claims: TestClaims) => {
+    const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url");
     return `${encode({ alg: "none" })}.${encode(claims)}.signature`;
 };
 
@@ -34,33 +35,33 @@ const oldToken = tokenFor({ sub: "u1", exp: 1000 });
 const newToken = tokenFor({ sub: "u1", exp: 3000 });
 const laterToken = tokenFor({ sub: "u1", exp: 4000 });
 
-const authenticated = (token) => ({
+const authenticated = (token: string) => ({
     mfa_required: false,
     user: profile,
     access_token: token,
     access_expires_at: 3000
 });
 
-const makeSeededClient = async (script) => {
+const makeSeededClient = async (script: TestScriptEntry[]) => {
     const transport = ScriptedTransport.init([
         { response: success(authenticated(oldToken)) },
         ...script
     ]);
-    const client = new CTGUserClient({ base_url: "https://s", transport, clock: FixedClock.init(1000) });
+    const client = new CTGUserbaseClient({ base_url: "https://s", transport, clock: FixedClock.init(1000) });
     await Authentication.init(client).login({ email: "a@example.test", password: "p" });
     return { client, transport };
 };
 
-const rejectValue = async (promise) => {
+const rejectValue = async (promise: TestPromise): Promise<TestErrorShape | null> => {
     try {
         await promise;
         return null;
     } catch (error) {
-        return error;
+        return error as TestErrorShape;
     }
 };
 
-const afterSeed = (transport) => transport.requests().slice(1);
+const afterSeed = (transport: TestScriptedTransport) => transport.requests().slice(1);
 
 describe("core client renewal conformance", () => {
 
@@ -78,18 +79,18 @@ describe("core client renewal conformance", () => {
                     result,
                     count: requests.length,
                     urls: requests.map((request) => request.url),
-                    replayAuthorization: requests[2].headers?.Authorization,
+                    replayAuthorization: transport.requestAt(3).headers?.Authorization,
                     sessionToken: client.session().access_token
                 };
             })
-            .assert("one renewal one replay", (state) => state.subject, CTGTestPredicates.equals({
+            .assert("one renewal one replay", (state) => state.subject, CTGTestPredicates.equals<unknown>({
                 result: { ok: true },
                 count: 3,
                 urls: ["https://s/r", "https://s/auth/refresh", "https://s/r"],
                 replayAuthorization: `Bearer ${newToken}`,
                 sessionToken: newToken
             }))
-            .start();
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -110,8 +111,8 @@ describe("core client renewal conformance", () => {
                 };
             })
             .assert("no second refresh", (state) => state.subject,
-                CTGTestPredicates.equals({ type: "AUTHENTICATION_REQUIRED", count: 3, refreshCount: 1 }))
-            .start();
+                CTGTestPredicates.equals<unknown>({ type: "AUTHENTICATION_REQUIRED", count: 3, refreshCount: 1 }))
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -126,12 +127,12 @@ describe("core client renewal conformance", () => {
                 const error = await rejectValue(client.request("GET", "/r"));
                 return { type: error?.type, count: afterSeed(transport).length, session: client.session() };
             })
-            .assert("session cleared", (state) => state.subject, CTGTestPredicates.equals({
+            .assert("session cleared", (state) => state.subject, CTGTestPredicates.equals<unknown>({
                 type: "AUTHENTICATION_REQUIRED",
                 count: 2,
                 session: { access_token: null, claims: null }
             }))
-            .start();
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -146,12 +147,12 @@ describe("core client renewal conformance", () => {
                 const error = await rejectValue(client.request("GET", "/r"));
                 return { type: error?.type, session: client.session(), count: afterSeed(transport).length };
             })
-            .assert("transport failure clears", (state) => state.subject, CTGTestPredicates.equals({
+            .assert("transport failure clears", (state) => state.subject, CTGTestPredicates.equals<unknown>({
                 type: "TRANSPORT_FAILED",
                 session: { access_token: null, claims: null },
                 count: 2
             }))
-            .start();
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -181,13 +182,13 @@ describe("core client renewal conformance", () => {
                     replayAuthorizations: requests.slice(4).map((request) => request.headers?.Authorization)
                 };
             })
-            .assert("single refresh", (state) => state.subject, CTGTestPredicates.equals({
+            .assert("single refresh", (state) => state.subject, CTGTestPredicates.equals<unknown>({
                 results: [{ id: "a" }, { id: "b" }, { id: "c" }],
                 refreshCount: 1,
                 replayUrls: ["https://s/a", "https://s/b", "https://s/c"],
                 replayAuthorizations: [`Bearer ${newToken}`, `Bearer ${newToken}`, `Bearer ${newToken}`]
             }))
-            .start();
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -215,13 +216,13 @@ describe("core client renewal conformance", () => {
                     replayCount: afterSeed(transport).filter((request) => ["/a", "/b", "/c"].some((path) => request.url.endsWith(path))).length - 3
                 };
             })
-            .assert("shared failure effects", (state) => state.subject, CTGTestPredicates.equals({
+            .assert("shared failure effects", (state) => state.subject, CTGTestPredicates.equals<unknown>({
                 errorTypes: ["AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED"],
                 count: 4,
                 notificationCount: 1,
                 replayCount: 0
             }))
-            .start();
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -246,8 +247,8 @@ describe("core client renewal conformance", () => {
                 };
             })
             .assert("two refreshes", (state) => state.subject,
-                CTGTestPredicates.equals({ first: { first: true }, second: { second: true }, refreshCount: 2 }))
-            .start();
+                CTGTestPredicates.equals<unknown>({ first: { first: true }, second: { second: true }, refreshCount: 2 }))
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -266,13 +267,13 @@ describe("core client renewal conformance", () => {
                     refreshCount: afterSeed(transport).filter((request) => request.url === "https://s/auth/refresh").length
                 };
             })
-            .assert("no renewal on 403", (state) => state.subject, CTGTestPredicates.equals({
+            .assert("no renewal on 403", (state) => state.subject, CTGTestPredicates.equals<unknown>({
                 type: "SERVICE_ERROR",
                 service_type: "PERMISSION_DENIED",
                 count: 1,
                 refreshCount: 0
             }))
-            .start();
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -281,7 +282,7 @@ describe("core client renewal conformance", () => {
         const state = await CTGTest.init("refresh no nested renewal")
             .stage("act", async () => {
                 const transport = ScriptedTransport.init([{ response: failure(401, "Authorization token required") }]);
-                const client = new CTGUserClient({ base_url: "https://s", transport, clock: FixedClock.init(1000) });
+                const client = new CTGUserbaseClient({ base_url: "https://s", transport, clock: FixedClock.init(1000) });
                 const error = await rejectValue(Authentication.init(client).refresh());
                 return {
                     type: error?.type,
@@ -289,12 +290,12 @@ describe("core client renewal conformance", () => {
                     urls: transport.requests().map((request) => request.url)
                 };
             })
-            .assert("one refresh only", (state) => state.subject, CTGTestPredicates.equals({
+            .assert("one refresh only", (state) => state.subject, CTGTestPredicates.equals<unknown>({
                 type: "AUTHENTICATION_REQUIRED",
                 count: 1,
                 urls: ["https://s/auth/refresh"]
             }))
-            .start();
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -309,12 +310,12 @@ describe("core client renewal conformance", () => {
                 return {
                     type: error?.type,
                     count: afterSeed(transport).length,
-                    authorization: afterSeed(transport)[0].headers?.Authorization
+                    authorization: transport.requestAt(1).headers?.Authorization
                 };
             })
             .assert("challenge token used once", (state) => state.subject,
-                CTGTestPredicates.equals({ type: "AUTHENTICATION_REQUIRED", count: 1, authorization: "Bearer M" }))
-            .start();
+                CTGTestPredicates.equals<unknown>({ type: "AUTHENTICATION_REQUIRED", count: 1, authorization: "Bearer M" }))
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -329,12 +330,12 @@ describe("core client renewal conformance", () => {
                 return {
                     type: error?.type,
                     count: afterSeed(transport).length,
-                    authorization: afterSeed(transport)[0].headers?.Authorization
+                    authorization: transport.requestAt(1).headers?.Authorization
                 };
             })
             .assert("email token operation not eligible", (state) => state.subject,
-                CTGTestPredicates.equals({ type: "AUTHENTICATION_REQUIRED", count: 1, authorization: undefined }))
-            .start();
+                CTGTestPredicates.equals<unknown>({ type: "AUTHENTICATION_REQUIRED", count: 1, authorization: undefined }))
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -353,12 +354,12 @@ describe("core client renewal conformance", () => {
                 return {
                     type: error?.type,
                     count: afterSeed(transport).length,
-                    authorization: afterSeed(transport)[0].headers?.Authorization
+                    authorization: transport.requestAt(1).headers?.Authorization
                 };
             })
             .assert("bootstrap not eligible", (state) => state.subject,
-                CTGTestPredicates.equals({ type: "AUTHENTICATION_REQUIRED", count: 1, authorization: undefined }))
-            .start();
+                CTGTestPredicates.equals<unknown>({ type: "AUTHENTICATION_REQUIRED", count: 1, authorization: undefined }))
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -378,13 +379,13 @@ describe("core client renewal conformance", () => {
                     session: client.session()
                 };
             })
-            .assert("no workaround", (state) => state.subject, CTGTestPredicates.equals({
+            .assert("no workaround", (state) => state.subject, CTGTestPredicates.equals<unknown>({
                 type: "AUTHENTICATION_REQUIRED",
                 count: 2,
                 urls: ["https://s/r", "https://s/auth/refresh"],
                 session: { access_token: null, claims: null }
             }))
-            .start();
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -398,8 +399,8 @@ describe("core client renewal conformance", () => {
                     { response: success([role]) },
                     { response: failure(401, "Authorization token required") }
                 ]);
-                const client = new CTGUserClient({ base_url: "https://s", transport, clock: FixedClock.init(1000) });
-                const login = await Authentication.init(client).login({ email: "a@example.test", password: "p" });
+                const client = new CTGUserbaseClient({ base_url: "https://s", transport, clock: FixedClock.init(1000) });
+                const login = await Authentication.init(client).login({ email: "a@example.test", password: "p" }) as Authenticated;
                 const profileResult = await AccountManagement.init(client).getProfile();
                 const roles = await Administration.init(client).listRoles();
                 return {
@@ -410,14 +411,14 @@ describe("core client renewal conformance", () => {
                     refreshCount: transport.requests().filter((request) => request.url === "https://s/auth/refresh").length
                 };
             })
-            .assert("normal completions", (state) => state.subject, CTGTestPredicates.equals({
+            .assert("normal completions", (state) => state.subject, CTGTestPredicates.equals<unknown>({
                 loginToken: oldToken,
                 profileResult: profile,
                 roles: [role],
                 urls: ["https://s/auth/login", "https://s/me", "https://s/admin/roles"],
                 refreshCount: 0
             }))
-            .start();
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });

@@ -1,0 +1,18 @@
+{
+    "extends": "./tsconfig.json",
+    "compilerOptions": {
+        "lib": [
+            "ESNext",
+            "DOM",
+            "DOM.Iterable"
+        ],
+        "noEmit": true,
+        "rootDir": ".",
+        "jsx": "react-jsx",
+        "skipLibCheck": true
+    },
+    "include": [
+        "src/**/*",
+        "tests/**/*"
+    ]
+}

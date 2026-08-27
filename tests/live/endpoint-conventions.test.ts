@@ -15,28 +15,28 @@ const fixturePath = process.env.SEED_FIXTURE === undefined
     ? defaultFixturePath
     : resolve(process.cwd(), process.env.SEED_FIXTURE);
 const fixtureExists = existsSync(fixturePath);
-const fixture = fixtureExists ? JSON.parse(readFileSync(fixturePath, "utf8")) : null;
+const fixture = (fixtureExists ? JSON.parse(readFileSync(fixturePath, "utf8")) : { user: { email: "", password: "" }, totp_user: { email: "", password: "", totp_secret: "" } }) as LiveFixture;
 
 if (!fixtureExists) {
     console.warn(`Skipping live endpoint convention tests: seed fixture not found at ${fixturePath}`);
 }
 
-const splitSetCookie = (value) => value.split(/,(?=\s*[^;=]+=[^;]+)/g).map((one) => one.trim()).filter(Boolean);
+const splitSetCookie = (value: string): string[] => value.split(/,(?=\s*[^;=]+=[^;]+)/g).map((one) => one.trim()).filter(Boolean);
 
-const fetchWire = async (path, options = {}) => {
-    const headers = { Accept: "application/json", ...(options.headers ?? {}) };
-    let body;
+const fetchWire = async (path: string, options: LiveFetchOptions = {}): Promise<LiveWireResponse> => {
+    const headers: Record<string, string> = { Accept: "application/json", ...(options.headers ?? {}) };
+    let body: string | undefined;
 
     if (Object.hasOwn(options, "body")) {
         headers["Content-Type"] = headers["Content-Type"] ?? "application/json";
         body = headers["Content-Type"].startsWith("application/json")
             ? JSON.stringify(options.body)
-            : options.body;
+            : typeof options.body === "string" ? options.body : String(options.body);
     }
     if (options.bearer !== undefined) {
         headers.Authorization = `Bearer ${options.bearer}`;
     }
-    if (options.cookie !== undefined) {
+    if (options.cookie !== undefined && options.cookie !== null) {
         headers.Cookie = options.cookie;
     }
 
@@ -52,50 +52,56 @@ const fetchWire = async (path, options = {}) => {
 
     return {
         status: response.status,
-        body: text === "" ? null : JSON.parse(text),
+        body: (text === "" ? null : JSON.parse(text)) as TestRecord,
         text,
         setCookie,
         sent: { method: options.method ?? "POST", path, headers, body }
     };
 };
 
-const randomEmail = (prefix) => `${prefix}-${randomUUID()}@staging.test`;
+const randomEmail = (prefix: string): string => `${prefix}-${randomUUID()}@staging.test`;
 const randomPassword = () => `pass-${randomUUID()}-long-enough`;
 
-const cookieNamed = (response, name) => response.setCookie.find((one) => one.startsWith(`${name}=`)) ?? null;
-const cookieValue = (cookie) => cookie === null ? null : cookie.split(";", 1)[0].split("=").slice(1).join("=");
-const hasAttribute = (cookie, name) => cookie !== null && cookie.split(";").some((part) => part.trim().toLowerCase() === name.toLowerCase());
-const attribute = (cookie, name) => {
+const cookieNamed = (response: LiveWireResponse, name: string): string | null => response.setCookie.find((one) => one.startsWith(`${name}=`)) ?? null;
+const cookieValue = (cookie: string | null): string | null => {
+    if (cookie === null) {
+        return null;
+    }
+    return (cookie.split(";", 1)[0] ?? "").split("=").slice(1).join("=");
+};
+const hasAttribute = (cookie: string | null, name: string): boolean =>
+    cookie !== null && cookie.split(";").some((part) => part.trim().toLowerCase() === name.toLowerCase());
+const attribute = (cookie: string | null, name: string): string | null => {
     if (cookie === null) {
         return null;
     }
     const prefix = `${name.toLowerCase()}=`;
-    const part = cookie.split(";").map((one) => one.trim()).find((one) => one.toLowerCase().startsWith(prefix));
+    const part = cookie.split(";").map((one: string) => one.trim()).find((one: string) => one.toLowerCase().startsWith(prefix));
     return part === undefined ? null : part.slice(name.length + 1);
 };
 
-const mentionsRefreshCredential = (response, cookie) => {
+const mentionsRefreshCredential = (response: LiveWireResponse, cookie: string | null): boolean => {
     const value = cookieValue(cookie);
     return response.text.includes("refresh_token") ||
         response.text.includes("refreshToken") ||
         (value !== null && value !== "" && response.text.includes(value));
 };
 
-const escapeHtml = (value) => String(value)
+const escapeHtml = (value: unknown): string => String(value)
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
 
-const decodeHtml = (value) => String(value)
+const decodeHtml = (value: unknown): string => String(value)
     .replace(/&quot;/g, "\"")
     .replace(/&#039;|&#x27;/g, "'")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&amp;/g, "&");
 
-const mailboxToken = async (recipient, event) => {
+const mailboxToken = async (recipient: string, event: string): Promise<string> => {
     const response = await fetch(`${baseUrl}/dev/mailbox.php`, { headers: { Accept: "text/html" } });
     const html = await response.text();
     const recipientText = escapeHtml(recipient);
@@ -110,7 +116,7 @@ const mailboxToken = async (recipient, event) => {
         if (pre === null) {
             continue;
         }
-        const payload = JSON.parse(decodeHtml(pre[1]));
+        const payload = JSON.parse(decodeHtml(pre[1] ?? "")) as TestRecord;
         if (typeof payload.token === "string") {
             return payload.token;
         }
@@ -127,7 +133,7 @@ const registerAndVerifyFreshUser = async () => {
     return { email, password };
 };
 
-const login = (credentials) => fetchWire("/auth/login", {
+const login = (credentials: LiveCredentials): Promise<LiveWireResponse> => fetchWire("/auth/login", {
     body: { email: credentials.email, password: credentials.password }
 });
 
@@ -139,12 +145,12 @@ describe.skipIf(!fixtureExists)("live endpoint convention conformance", () => {
             .stage("act", async () => fetchWire("/auth/register", {
                 body: { email: randomEmail("success"), password: randomPassword() }
             }))
-            .assert("success envelope", (state) => state.subject, CTGTestPredicates.satisfies((response) => (
+            .assert("success envelope", (state) => state.subject, CTGTestPredicates.satisfies((response: LiveWireResponse) => (
                 response.status === 200 &&
                 response.body.success === true &&
                 response.body.result.status === "verification_sent"
             )))
-            .start();
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -152,13 +158,13 @@ describe.skipIf(!fixtureExists)("live endpoint convention conformance", () => {
     it("A failure response is JSON object { success: false, result: <one of the three failure shapes> }", async () => {
         const state = await CTGTest.init("conventions failure envelope")
             .stage("act", async () => login({ email: randomEmail("nobody"), password: randomPassword() }))
-            .assert("failure envelope", (state) => state.subject, CTGTestPredicates.satisfies((response) => (
+            .assert("failure envelope", (state) => state.subject, CTGTestPredicates.satisfies((response: LiveWireResponse) => (
                 response.status === 403 &&
                 response.body.success === false &&
                 typeof response.body.result === "object" &&
                 response.body.result.type === "INVALID_CREDENTIALS"
             )))
-            .start();
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -174,17 +180,20 @@ describe.skipIf(!fixtureExists)("live endpoint convention conformance", () => {
                     bearer: second.body.result.access_token
                 });
                 const target = sessions.body.result.find((one) => one.current === false) ?? sessions.body.result[0];
+                if (target === undefined || target.id === undefined) {
+                    throw new Error("Expected a session target");
+                }
                 return fetchWire(`/me/session?id=${encodeURIComponent(target.id)}`, {
                     method: "DELETE",
                     bearer: second.body.result.access_token
                 });
             })
-            .assert("empty response", (state) => state.subject, CTGTestPredicates.satisfies((response) => (
+            .assert("empty response", (state) => state.subject, CTGTestPredicates.satisfies((response: LiveWireResponse) => (
                 response.status === 204 &&
                 response.text === "" &&
                 response.body === null
             )))
-            .start();
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -192,12 +201,12 @@ describe.skipIf(!fixtureExists)("live endpoint convention conformance", () => {
     it("A 401 response carries the authentication failure shape: result is a plain string, and success is false", async () => {
         const state = await CTGTest.init("conventions 401 authentication failure")
             .stage("act", async () => fetchWire("/auth/refresh"))
-            .assert("plain string result", (state) => state.subject, CTGTestPredicates.satisfies((response) => (
+            .assert("plain string result", (state) => state.subject, CTGTestPredicates.satisfies((response: LiveWireResponse) => (
                 response.status === 401 &&
                 response.body.success === false &&
                 typeof response.body.result === "string"
             )))
-            .start();
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -211,12 +220,12 @@ describe.skipIf(!fixtureExists)("live endpoint convention conformance", () => {
                     bearer: signedIn.body.result.access_token
                 });
             })
-            .assert("permission denied result", (state) => state.subject, CTGTestPredicates.satisfies((response) => (
+            .assert("permission denied result", (state) => state.subject, CTGTestPredicates.satisfies((response: LiveWireResponse) => (
                 response.status === 403 &&
                 response.body.success === false &&
                 response.body.result.type === "PERMISSION_DENIED"
             )))
-            .start();
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -226,12 +235,12 @@ describe.skipIf(!fixtureExists)("live endpoint convention conformance", () => {
             .stage("act", async () => fetchWire("/auth/login", {
                 body: { email: randomEmail("missing-password") }
             }))
-            .assert("parameter map", (state) => state.subject, CTGTestPredicates.satisfies((response) => (
+            .assert("parameter map", (state) => state.subject, CTGTestPredicates.satisfies((response: LiveWireResponse) => (
                 response.status === 400 &&
                 response.body.success === false &&
                 response.body.result.password === "Required"
             )))
-            .start();
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -242,12 +251,12 @@ describe.skipIf(!fixtureExists)("live endpoint convention conformance", () => {
                 body: `email=${encodeURIComponent(randomEmail("form"))}&password=${encodeURIComponent(randomPassword())}`,
                 headers: { "Content-Type": "application/x-www-form-urlencoded" }
             }))
-            .assert("invalid content type", (state) => state.subject, CTGTestPredicates.satisfies((response) => (
+            .assert("invalid content type", (state) => state.subject, CTGTestPredicates.satisfies((response: LiveWireResponse) => (
                 response.status === 400 &&
                 response.body.success === false &&
                 response.body.result.type === "INVALID_CONTENT_TYPE"
             )))
-            .start();
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -259,11 +268,11 @@ describe.skipIf(!fixtureExists)("live endpoint convention conformance", () => {
                 const cookie = cookieNamed(signedIn, "refresh_token");
                 return { signedIn, cookie };
             })
-            .assert("body excludes cookie credential", (state) => state.subject, CTGTestPredicates.satisfies(({ signedIn, cookie }) => (
+            .assert("body excludes cookie credential", (state) => state.subject, CTGTestPredicates.satisfies(({ signedIn, cookie }: { signedIn: LiveWireResponse; cookie: string | null }) => (
                 cookie !== null &&
                 mentionsRefreshCredential(signedIn, cookie) === false
             )))
-            .start();
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -271,7 +280,7 @@ describe.skipIf(!fixtureExists)("live endpoint convention conformance", () => {
     it("A response that sets the refresh cookie uses HttpOnly, Secure, SameSite=Strict, and Path=/auth", async () => {
         const state = await CTGTest.init("conventions refresh cookie attributes")
             .stage("act", async () => cookieNamed(await login(fixture.user), "refresh_token"))
-            .assert("refresh cookie attributes", (state) => state.subject, CTGTestPredicates.satisfies((cookie) => (
+            .assert("refresh cookie attributes", (state) => state.subject, CTGTestPredicates.satisfies((cookie: string | null) => (
                 cookie !== null &&
                 cookie.startsWith("refresh_token=") &&
                 hasAttribute(cookie, "HttpOnly") &&
@@ -279,7 +288,7 @@ describe.skipIf(!fixtureExists)("live endpoint convention conformance", () => {
                 attribute(cookie, "SameSite") === "Strict" &&
                 attribute(cookie, "Path") === "/auth"
             )))
-            .start();
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -287,12 +296,12 @@ describe.skipIf(!fixtureExists)("live endpoint convention conformance", () => {
     it("A refresh request with no cookie present returns 401 with the authentication failure shape", async () => {
         const state = await CTGTest.init("conventions refresh no cookie")
             .stage("act", async () => fetchWire("/auth/refresh"))
-            .assert("401 authentication failure", (state) => state.subject, CTGTestPredicates.satisfies((response) => (
+            .assert("401 authentication failure", (state) => state.subject, CTGTestPredicates.satisfies((response: LiveWireResponse) => (
                 response.status === 401 &&
                 response.body.success === false &&
                 typeof response.body.result === "string"
             )))
-            .start();
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -300,12 +309,12 @@ describe.skipIf(!fixtureExists)("live endpoint convention conformance", () => {
     it("A logout request with no cookie present returns 200 with the ordinary logout success shape", async () => {
         const state = await CTGTest.init("conventions logout no cookie")
             .stage("act", async () => fetchWire("/auth/logout"))
-            .assert("ordinary logout success", (state) => state.subject, CTGTestPredicates.satisfies((response) => (
+            .assert("ordinary logout success", (state) => state.subject, CTGTestPredicates.satisfies((response: LiveWireResponse) => (
                 response.status === 200 &&
                 response.body.success === true &&
                 response.body.result.status === "logged_out"
             )))
-            .start();
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });

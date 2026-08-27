@@ -6,66 +6,95 @@ import { act } from "react-dom/test-utils";
 import { describe, it, expect } from "vitest";
 import CTGReactTest from "ctg-react-test";
 import { CTGTestResult } from "ctg-js-test";
-import CTGUserClient from "../../src/core/CTGUserClient.js";
+import CTGUserbaseClient from "../../src/core/CTGUserbaseClient.js";
 import ClientError from "../../src/core/ClientError.js";
 import Authentication from "../../src/core/Authentication.js";
 import AccountManagement from "../../src/core/AccountManagement.js";
+import type { Operation } from "../../src/react/useOperation.js";
 import useOperation from "../../src/react/useOperation.js";
 import ScriptedTransport from "../support/ScriptedTransport.js";
 import FixedClock from "../support/FixedClock.js";
 
 const S = CTGTestResult.STATUS;
 
-const success = (result) => ({
+const success = (result: unknown) => ({
     status: 200,
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ success: true, result })
 });
 
-const tokenFor = (claims) => {
-    const encode = (value) => Buffer.from(JSON.stringify(value)).toString("base64url");
+const tokenFor = (claims: TestClaims) => {
+    const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url");
     return `${encode({ alg: "none" })}.${encode(claims)}.signature`;
 };
 
 const profile = { id: "u1", email: "a@example.test", name: null, roles: [], group_ids: [], totp_enabled: false, email_verified: true };
 
-const authenticated = (claims) => ({
+const authenticated = (claims: TestClaims & { exp: number }) => ({
     mfa_required: false,
     user: profile,
     access_token: tokenFor(claims),
     access_expires_at: claims.exp
 });
 
-const makeClient = (script) => {
+const makeClient = (script: TestScriptEntry[]) => {
     const transport = ScriptedTransport.init(script);
-    const client = new CTGUserClient({ base_url: "https://s", transport, clock: FixedClock.init(1000) });
+    const client = new CTGUserbaseClient({ base_url: "https://s", transport, clock: FixedClock.init(1000) });
     return { client, transport, auth: Authentication.init(client), account: AccountManagement.init(client) };
 };
 
-const deferred = () => {
-    let resolve;
-    let reject;
-    const promise = new Promise((res, rej) => {
+interface Deferred<Value> {
+    promise: Promise<Value>;
+    resolve: (value: Value | PromiseLike<Value>) => void;
+    reject: (reason?: unknown) => void;
+}
+
+const deferred = <Value = unknown>(): Deferred<Value> => {
+    let resolve: Deferred<Value>["resolve"] | null = null;
+    let reject: Deferred<Value>["reject"] | null = null;
+    const promise = new Promise<Value>((res, rej) => {
         resolve = res;
         reject = rej;
     });
+    if (resolve === null || reject === null) {
+        throw new Error("Deferred promise callbacks were not initialized");
+    }
     return { promise, resolve, reject };
+};
+
+const expectRunPromise = (promise: Promise<void> | null): Promise<void> => {
+    if (promise === null) {
+        throw new Error("Expected run promise");
+    }
+    return promise;
+};
+
+const promiseAt = (promises: Promise<void>[], index: number): Promise<void> => {
+    const promise = promises[index];
+    if (promise === undefined) {
+        throw new Error(`Expected run promise at index ${index}`);
+    }
+    return promise;
 };
 
 const serviceError = () => {
     const error = new ClientError("SERVICE_ERROR");
-    error.service_type = "PERMISSION_DENIED";
-    error.status = 403;
+    Object.defineProperty(error, "service_type", { value: "PERMISSION_DENIED" });
+    Object.defineProperty(error, "status", { value: 403 });
     return error;
 };
 
-class ErrorBoundary extends React.Component {
-    constructor(props) {
+interface ErrorBoundaryState {
+    error: TestErrorShape | null;
+}
+
+class ErrorBoundary extends React.Component<{ children: React.ReactNode }, ErrorBoundaryState> {
+    constructor(props: { children: React.ReactNode }) {
         super(props);
         this.state = { error: null };
     }
 
-    static getDerivedStateFromError(error) {
+    static getDerivedStateFromError(error: TestErrorShape): ErrorBoundaryState {
         return { error };
     }
 
@@ -78,13 +107,20 @@ class ErrorBoundary extends React.Component {
     }
 }
 
-const summarizeError = (error) => error === null ? null : {
+const summarizeError = (error: ClientError | null) => error === null ? null : {
     type: error.type,
     service_type: error.service_type,
     status: error.status
 };
 
-const OperationProbe = ({ operation, args, label = "run", onRun = null }) => {
+interface OperationProbeProps<Args, Result> {
+    operation: Operation<Args, Result>;
+    args?: Args;
+    label?: string;
+    onRun?: ((promise: Promise<void>) => void) | null;
+}
+
+function OperationProbe<Args, Result>({ operation, args = undefined as Args, label = "run", onRun = null }: OperationProbeProps<Args, Result>) {
     const handle = useOperation(operation);
     return (
         <>
@@ -97,15 +133,15 @@ const OperationProbe = ({ operation, args, label = "run", onRun = null }) => {
             <output data-testid="error">{JSON.stringify(summarizeError(handle.error))}</output>
         </>
     );
-};
+}
 
-const PromiseOutcomeProbe = ({ operation }) => {
-    const handle = useOperation(operation);
+const PromiseOutcomeProbe = ({ operation }: { operation: () => Promise<unknown> }) => {
+    const handle = useOperation<void, unknown>(operation);
     const [settled, setSettled] = useState("idle");
     return (
         <>
             <button onClick={() => {
-                handle.run().then(
+                handle.run(undefined).then(
                     () => setSettled("resolved"),
                     () => setSettled("rejected")
                 );
@@ -156,13 +192,13 @@ describe("react operation hook conformance", () => {
 
     it("run() settling to a value exposes pending false, result the value, and error null", async () => {
         const pending = deferred();
-        let runPromise = null;
+        let runPromise: Promise<void> | null = null;
         const state = await CTGReactTest.init("operation success")
             .interact("run and settle", async ({ screen, user }) => {
                 await user.click(screen.getByText("run"));
                 await act(async () => {
                     pending.resolve({ status: "done" });
-                    await runPromise;
+                    await expectRunPromise(runPromise);
                 });
             })
             .assertComponent("success state", (screen) => ({
@@ -183,7 +219,7 @@ describe("react operation hook conformance", () => {
         const first = deferred();
         const second = deferred();
         let call = 0;
-        let runPromise = null;
+        let runPromise: Promise<void> | null = null;
         const operation = () => {
             call += 1;
             return call === 1 ? first.promise : second.promise;
@@ -194,14 +230,14 @@ describe("react operation hook conformance", () => {
                 await user.click(screen.getByText("run"));
                 await act(async () => {
                     first.resolve({ status: "kept" });
-                    await runPromise;
+                    await expectRunPromise(runPromise);
                 });
             })
             .interact("settle second failure", async ({ screen, user }) => {
                 await user.click(screen.getByText("run"));
                 await act(async () => {
                     second.reject(serviceError());
-                    await runPromise;
+                    await expectRunPromise(runPromise);
                 });
             })
             .assertComponent("failure state", (screen) => ({
@@ -245,7 +281,7 @@ describe("react operation hook conformance", () => {
         const first = deferred();
         const second = deferred();
         let call = 0;
-        const runPromises = [];
+        const runPromises: Promise<void>[] = [];
         const operation = () => {
             call += 1;
             return call === 1 ? first.promise : second.promise;
@@ -257,11 +293,11 @@ describe("react operation hook conformance", () => {
                 await user.click(screen.getByText("run"));
                 await act(async () => {
                     second.resolve({ id: "second" });
-                    await runPromises[1];
+                    await promiseAt(runPromises, 1);
                 });
                 await act(async () => {
                     first.resolve({ id: "first" });
-                    await runPromises[0];
+                    await promiseAt(runPromises, 0);
                 });
             })
             .assertComponent("second result remains", (screen) =>
@@ -307,14 +343,21 @@ describe("react operation hook conformance", () => {
     it("useOperation given a value that is not an operation throws CONFIGURATION_INVALID with details.field operation", async () => {
         const state = await CTGReactTest.init("operation requires function")
             .assertComponent("operation error", (screen) => screen.getByTestId("error").textContent, "CONFIGURATION_INVALID:operation")
-            .start(<ErrorBoundary><OperationProbe operation={{ not: "a function" }} /></ErrorBoundary>);
+            .start(
+                <ErrorBoundary>
+                    {
+                        // @ts-expect-error non-function operation verifies configuration error
+                        <OperationProbe operation={{ not: "a function" }} />
+                    }
+                </ErrorBoundary>
+            );
 
         expect(state.status).toBe(S.PASS);
     });
 
     it("useOperation given setupMFA and settling successfully exposes exactly provisioning_uri and secret and renders no QR code", async () => {
         const setupResult = { provisioning_uri: "otpauth://totp/ctg", secret: "SECRET" };
-        let runPromise = null;
+        let runPromise: Promise<void> | null = null;
         const { client, auth, account } = makeClient([
             { response: success(authenticated({ sub: "u1", exp: 2000 })) },
             { response: success(setupResult) }
@@ -324,7 +367,7 @@ describe("react operation hook conformance", () => {
         const state = await CTGReactTest.init("operation setupMFA")
             .interact("run setupMFA", async ({ screen, user }) => {
                 await user.click(screen.getByText("run"));
-                await runPromise;
+                await expectRunPromise(runPromise);
             })
             .assertComponent("setup result only", (screen) => ({
                 result: JSON.parse(screen.getByTestId("result").textContent),

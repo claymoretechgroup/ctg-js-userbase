@@ -2,20 +2,20 @@
 
 import { describe, it, expect } from "vitest";
 import { CTGTest, CTGTestPredicates, CTGTestResult } from "ctg-js-test";
-import CTGUserClient from "../../src/core/CTGUserClient.js";
+import CTGUserbaseClient from "../../src/core/CTGUserbaseClient.js";
 import Authentication from "../../src/core/Authentication.js";
 import ScriptedTransport from "../support/ScriptedTransport.js";
 import FixedClock from "../support/FixedClock.js";
 
 const { STATUS } = CTGTestResult;
 
-const success = (result) => ({
+const success = (result: unknown) => ({
     status: 200,
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ success: true, result })
 });
 
-const failure = (status, result) => ({
+const failure = (status: number, result: unknown) => ({
     status,
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ success: false, result })
@@ -23,18 +23,18 @@ const failure = (status, result) => ({
 
 const profile = { id: "u1", email: "a@example.test", name: null, roles: [], group_ids: [], totp_enabled: false, email_verified: true };
 
-const makeClient = (script) => {
+const makeClient = (script: TestScriptEntry[]) => {
     const transport = ScriptedTransport.init(script);
-    const client = new CTGUserClient({ base_url: "https://s", transport, clock: FixedClock.init(1000) });
+    const client = new CTGUserbaseClient({ base_url: "https://s", transport, clock: FixedClock.init(1000) });
     return { client, transport, auth: Authentication.init(client) };
 };
 
-const rejectValue = async (promise) => {
+const rejectValue = async (promise: TestPromise): Promise<TestErrorShape | null> => {
     try {
         await promise;
         return null;
     } catch (error) {
-        return error;
+        return error as TestErrorShape;
     }
 };
 
@@ -43,18 +43,18 @@ describe("authentication registration and verification conformance", () => {
     it("register({ email, password }) succeeding: returns verification_sent, session unchanged, no listener applied", async () => {
         const state = await CTGTest.init("register success")
             .stage("act", async () => {
-                const seen = [];
+                const seen: unknown[] = [];
                 const { client, auth } = makeClient([{ response: success({ status: "verification_sent" }) }]);
                 client.subscribe((session) => seen.push(session));
                 const result = await auth.register({ email: "a@example.test", password: "p" });
                 return { result, session: client.session(), listenerCount: seen.length };
             })
-            .assert("register effects", (state) => state.subject, CTGTestPredicates.equals({
+            .assert("register effects", (state) => state.subject, CTGTestPredicates.equals<unknown>({
                 result: { status: "verification_sent" },
                 session: { access_token: null, claims: null },
                 listenerCount: 0
             }))
-            .start();
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -66,8 +66,8 @@ describe("authentication registration and verification conformance", () => {
                 return await auth.register({ email: "a@example.test", password: "p" });
             })
             .assert("no enumeration", (state) => state.subject,
-                CTGTestPredicates.equals({ status: "verification_sent" }))
-            .start();
+                CTGTestPredicates.equals<unknown>({ status: "verification_sent" }))
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -77,15 +77,18 @@ describe("authentication registration and verification conformance", () => {
         const state = await CTGTest.init("register parameter rejected")
             .stage("act", async () => {
                 const { auth, transport } = makeClient([{ response: failure(422, fields) }]);
-                const error = await rejectValue(auth.register({ email: "nope" }));
+                const error = await rejectValue(auth.register(
+                    // @ts-expect-error missing password verifies runtime parameter rejection
+                    { email: "nope" }
+                ));
                 return { type: error?.type, fields: error?.fields, count: transport.requests().length };
             })
-            .assert("parameter failure", (state) => state.subject, CTGTestPredicates.equals({
+            .assert("parameter failure", (state) => state.subject, CTGTestPredicates.equals<unknown>({
                 type: "PARAMETER_REJECTED",
                 fields,
                 count: 1
             }))
-            .start();
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -97,11 +100,11 @@ describe("authentication registration and verification conformance", () => {
                 const result = await auth.verifyEmail({ token: "verify-token" });
                 return { result, session: client.session() };
             })
-            .assert("verified profile without session", (state) => state.subject, CTGTestPredicates.equals({
+            .assert("verified profile without session", (state) => state.subject, CTGTestPredicates.equals<unknown>({
                 result: profile,
                 session: { access_token: null, claims: null }
             }))
-            .start();
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });

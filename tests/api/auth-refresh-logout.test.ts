@@ -2,27 +2,28 @@
 
 import { describe, it, expect } from "vitest";
 import { CTGTest, CTGTestPredicates, CTGTestResult } from "ctg-js-test";
-import CTGUserClient from "../../src/core/CTGUserClient.js";
+import CTGUserbaseClient from "../../src/core/CTGUserbaseClient.js";
 import Authentication from "../../src/core/Authentication.js";
+import type { Request } from "../../src/core/types.js";
 import ScriptedTransport from "../support/ScriptedTransport.js";
 import FixedClock from "../support/FixedClock.js";
 
 const { STATUS } = CTGTestResult;
 
-const success = (result) => ({
+const success = (result: unknown) => ({
     status: 200,
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ success: true, result })
 });
 
-const failure = (status, result) => ({
+const failure = (status: number, result: unknown) => ({
     status,
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ success: false, result })
 });
 
-const tokenFor = (claims) => {
-    const encode = (value) => Buffer.from(JSON.stringify(value)).toString("base64url");
+const tokenFor = (claims: TestClaims) => {
+    const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url");
     return `${encode({ alg: "none" })}.${encode(claims)}.signature`;
 };
 
@@ -32,20 +33,20 @@ const newClaims = { sub: "u1", exp: 4000 };
 const oldToken = tokenFor(oldClaims);
 const newToken = tokenFor(newClaims);
 
-const authenticated = (accessToken, expiresAt = 3000) => ({
+const authenticated = (accessToken: string, expiresAt = 3000) => ({
     mfa_required: false,
     user: profile,
     access_token: accessToken,
     access_expires_at: expiresAt
 });
 
-const makeClient = (script) => {
+const makeClient = (script: TestScriptEntry[]) => {
     const transport = ScriptedTransport.init(script);
-    const client = new CTGUserClient({ base_url: "https://s", transport, clock: FixedClock.init(1000) });
+    const client = new CTGUserbaseClient({ base_url: "https://s", transport, clock: FixedClock.init(1000) });
     return { client, transport, auth: Authentication.init(client) };
 };
 
-const makeSeededClient = async (script) => {
+const makeSeededClient = async (script: TestScriptEntry[]) => {
     const setup = makeClient([
         { response: success(authenticated(oldToken, 2000)) },
         ...script
@@ -54,19 +55,19 @@ const makeSeededClient = async (script) => {
     return setup;
 };
 
-const rejectValue = async (promise) => {
+const rejectValue = async (promise: TestPromise): Promise<TestErrorShape | null> => {
     try {
         await promise;
         return null;
     } catch (error) {
-        return error;
+        return error as TestErrorShape;
     }
 };
 
-const afterSeed = (transport) => transport.requests().slice(1);
-const hasHeader = (request, name) => Object.hasOwn(request.headers ?? {}, name);
+const afterSeed = (transport: TestScriptedTransport) => transport.requests().slice(1);
+const hasHeader = (request: Request, name: string) => Object.hasOwn(request.headers ?? {}, name);
 
-const requestSummary = (request) => ({
+const requestSummary = (request: Request) => ({
     method: request.method,
     url: request.url,
     authorization: request.headers?.Authorization,
@@ -83,17 +84,17 @@ describe("authentication refresh and logout conformance", () => {
                 const { client, auth, transport } = await makeSeededClient([
                     { response: success(authenticated(newToken, 4000)) }
                 ]);
-                const seen = [];
+                const seen: unknown[] = [];
                 client.subscribe((session) => seen.push(session));
                 const result = await auth.refresh();
                 return {
                     result,
-                    request: requestSummary(afterSeed(transport)[0]),
+                    request: requestSummary(transport.requestAt(1)),
                     session: client.session(),
                     listenerCount: seen.length
                 };
             })
-            .assert("refresh effects", (state) => state.subject, CTGTestPredicates.equals({
+            .assert("refresh effects", (state) => state.subject, CTGTestPredicates.equals<unknown>({
                 result: authenticated(newToken, 4000),
                 request: {
                     method: "POST",
@@ -106,7 +107,7 @@ describe("authentication refresh and logout conformance", () => {
                 session: { access_token: newToken, claims: newClaims },
                 listenerCount: 1
             }))
-            .start();
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -117,17 +118,17 @@ describe("authentication refresh and logout conformance", () => {
                 const { client, auth } = await makeSeededClient([
                     { response: failure(401, "Refresh required") }
                 ]);
-                const seen = [];
+                const seen: unknown[] = [];
                 client.subscribe((session) => seen.push(session));
                 const error = await rejectValue(auth.refresh());
                 return { type: error?.type, session: client.session(), listenerCount: seen.length };
             })
-            .assert("refresh auth failure clears", (state) => state.subject, CTGTestPredicates.equals({
+            .assert("refresh auth failure clears", (state) => state.subject, CTGTestPredicates.equals<unknown>({
                 type: "AUTHENTICATION_REQUIRED",
                 session: { access_token: null, claims: null },
                 listenerCount: 1
             }))
-            .start();
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -138,25 +139,26 @@ describe("authentication refresh and logout conformance", () => {
                 const { client, auth } = await makeSeededClient([
                     { reject: new Error("network down") }
                 ]);
-                const seen = [];
+                const seen: unknown[] = [];
                 client.subscribe((session) => seen.push(session));
                 const error = await rejectValue(auth.refresh());
                 return {
                     type: error?.type,
                     method: error?.details?.method,
-                    urlEndsWithRefresh: error?.details?.url?.endsWith("/auth/refresh"),
+                    urlEndsWithRefresh: typeof error?.details?.url === "string" &&
+                        error.details.url.endsWith("/auth/refresh"),
                     session: client.session(),
                     listenerCount: seen.length
                 };
             })
-            .assert("transport failure surfaced", (state) => state.subject, CTGTestPredicates.equals({
+            .assert("transport failure surfaced", (state) => state.subject, CTGTestPredicates.equals<unknown>({
                 type: "TRANSPORT_FAILED",
                 method: "POST",
                 urlEndsWithRefresh: true,
                 session: { access_token: null, claims: null },
                 listenerCount: 1
             }))
-            .start();
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -178,7 +180,7 @@ describe("authentication refresh and logout conformance", () => {
                     credentials: requests[0]?.credentials
                 };
             })
-            .assert("single credentialed attempt", (state) => state.subject, CTGTestPredicates.equals({
+            .assert("single credentialed attempt", (state) => state.subject, CTGTestPredicates.equals<unknown>({
                 type: "TRANSPORT_FAILED",
                 status: null,
                 method: "POST",
@@ -186,7 +188,7 @@ describe("authentication refresh and logout conformance", () => {
                 count: 1,
                 credentials: "include"
             }))
-            .start();
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -197,17 +199,17 @@ describe("authentication refresh and logout conformance", () => {
                 const { client, auth, transport } = await makeSeededClient([
                     { response: success({ status: "logged_out" }) }
                 ]);
-                const seen = [];
+                const seen: unknown[] = [];
                 client.subscribe((session) => seen.push(session));
                 const result = await auth.logout();
                 return {
                     result,
-                    request: requestSummary(afterSeed(transport)[0]),
+                    request: requestSummary(transport.requestAt(1)),
                     session: client.session(),
                     listenerCount: seen.length
                 };
             })
-            .assert("logout effects", (state) => state.subject, CTGTestPredicates.equals({
+            .assert("logout effects", (state) => state.subject, CTGTestPredicates.equals<unknown>({
                 result: { status: "logged_out" },
                 request: {
                     method: "POST",
@@ -220,7 +222,7 @@ describe("authentication refresh and logout conformance", () => {
                 session: { access_token: null, claims: null },
                 listenerCount: 1
             }))
-            .start();
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -231,17 +233,17 @@ describe("authentication refresh and logout conformance", () => {
                 const { client, auth } = await makeSeededClient([
                     { reject: new Error("network down") }
                 ]);
-                const seen = [];
+                const seen: unknown[] = [];
                 client.subscribe((session) => seen.push(session));
                 const error = await rejectValue(auth.logout());
                 return { type: error?.type, session: client.session(), listenerCount: seen.length };
             })
-            .assert("logout failure clears", (state) => state.subject, CTGTestPredicates.equals({
+            .assert("logout failure clears", (state) => state.subject, CTGTestPredicates.equals<unknown>({
                 type: "TRANSPORT_FAILED",
                 session: { access_token: null, claims: null },
                 listenerCount: 1
             }))
-            .start();
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -253,8 +255,8 @@ describe("authentication refresh and logout conformance", () => {
                 return await auth.logout();
             })
             .assert("idempotent logout", (state) => state.subject,
-                CTGTestPredicates.equals({ status: "logged_out" }))
-            .start();
+                CTGTestPredicates.equals<unknown>({ status: "logged_out" }))
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });

@@ -6,6 +6,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it, expect } from "vitest";
 import CTGBrowserTest, { CTGTestPredicates, CTGTestResult } from "ctg-js-browser-test";
+import type { Page, Response } from "playwright";
 
 const { STATUS } = CTGTestResult;
 
@@ -17,7 +18,10 @@ const fixturePath = process.env.SEED_FIXTURE === undefined
     ? defaultFixturePath
     : resolve(process.cwd(), process.env.SEED_FIXTURE);
 const fixtureExists = existsSync(fixturePath);
-const fixture = fixtureExists ? JSON.parse(readFileSync(fixturePath, "utf8")) : null;
+const fixture = (fixtureExists ? JSON.parse(readFileSync(fixturePath, "utf8")) : {
+    user: { email: "", password: "" },
+    totp_user: { email: "", password: "" }
+}) as LiveFixture;
 
 if (!fixtureExists) {
     console.warn(`Skipping browser credential lifecycle tests: seed fixture not found at ${fixturePath}`);
@@ -41,11 +45,22 @@ const browserConfig = {
     timeout: TEST_TIMEOUT
 };
 
-const randomEmail = (prefix) => `${prefix}-${randomUUID()}@staging.test`;
+interface BrowserSession {
+    visible: boolean;
+    text: string;
+    details: Record<string, string>;
+}
+
+interface SignedOutState {
+    loginVisible: boolean;
+    sessionVisible: boolean;
+}
+
+const randomEmail = (prefix: string): string => `${prefix}-${randomUUID()}@staging.test`;
 const randomPassword = () => `pass-${randomUUID()}-long-enough`;
 
-const waitForAnyVisible = async (page, cssSelectors, timeout = 15000) => {
-    await page.waitForFunction((candidates) => candidates.some((selector) => {
+const waitForAnyVisible = async (page: Page, cssSelectors: string[], timeout = 15000): Promise<void> => {
+    await page.waitForFunction((candidates: string[]) => candidates.some((selector: string) => {
         const element = document.querySelector(selector);
 
         if (element === null) {
@@ -57,20 +72,24 @@ const waitForAnyVisible = async (page, cssSelectors, timeout = 15000) => {
     }), cssSelectors, { timeout });
 };
 
-const submitLogin = async (page, credentials, outcomes = [selectors.sessionPanel, selectors.loginError, selectors.mfaNotice]) => {
+const submitLogin = async (
+    page: Page,
+    credentials: LiveCredentials,
+    outcomes = [selectors.sessionPanel, selectors.loginError, selectors.mfaNotice]
+): Promise<void> => {
     await page.locator(selectors.loginEmail).fill(credentials.email);
     await page.locator(selectors.loginPassword).fill(credentials.password);
     await page.locator(selectors.loginSubmit).click();
     await waitForAnyVisible(page, outcomes);
 };
 
-const visible = async (page, selector) => await page.locator(selector).isVisible();
+const visible = async (page: Page, selector: string): Promise<boolean> => await page.locator(selector).isVisible();
 
-const readableCookiesContainRefreshToken = async (page) => {
+const readableCookiesContainRefreshToken = async (page: Page): Promise<boolean> => {
     return await page.evaluate(() => document.cookie.includes("refresh_token"));
 };
 
-const sessionText = async (page) => {
+const sessionText = async (page: Page): Promise<string> => {
     if (!await visible(page, selectors.sessionPanel)) {
         return "";
     }
@@ -78,12 +97,12 @@ const sessionText = async (page) => {
     return (await page.locator(selectors.sessionPanel).textContent()) ?? "";
 };
 
-const sessionDetails = async (page) => {
+const sessionDetails = async (page: Page): Promise<Record<string, string>> => {
     if (!await visible(page, selectors.sessionPanel)) {
         return {};
     }
 
-    return await page.locator(`${selectors.sessionPanel} dl > div`).evaluateAll((rows) => {
+    return await page.locator(`${selectors.sessionPanel} dl > div`).evaluateAll((rows: Element[]) => {
         return Object.fromEntries(rows.map((row) => [
             row.querySelector("dt")?.textContent?.trim() ?? "",
             row.querySelector("dd")?.textContent?.trim() ?? ""
@@ -91,7 +110,7 @@ const sessionDetails = async (page) => {
     });
 };
 
-const currentSession = async (page) => {
+const currentSession = async (page: Page): Promise<BrowserSession> => {
     return {
         visible: await visible(page, selectors.sessionPanel),
         text: await sessionText(page),
@@ -99,14 +118,14 @@ const currentSession = async (page) => {
     };
 };
 
-const currentSignedOutState = async (page) => {
+const currentSignedOutState = async (page: Page): Promise<SignedOutState> => {
     return {
         loginVisible: await visible(page, selectors.loginEmail),
         sessionVisible: await visible(page, selectors.sessionPanel)
     };
 };
 
-const errorText = async (page, selector) => {
+const errorText = async (page: Page, selector: string): Promise<string> => {
     if (!await visible(page, selector)) {
         return "";
     }
@@ -114,16 +133,15 @@ const errorText = async (page, selector) => {
     return (await page.locator(selector).textContent()) ?? "";
 };
 
-const waitForEndpointResult = (page, path, timeout = 15000) => new Promise((resolveResult, reject) => {
-    let timer;
+const waitForEndpointResult = (page: Page, path: string, timeout = 15000): Promise<TestRecord> => new Promise((resolveResult, reject) => {
+    let timer: ReturnType<typeof setTimeout>;
 
-    const done = (callback, value) => {
+    const cleanup = () => {
         clearTimeout(timer);
         page.off("response", handler);
-        callback(value);
     };
 
-    const handler = async (response) => {
+    const handler = async (response: Response) => {
         let pathname;
 
         try {
@@ -137,14 +155,17 @@ const waitForEndpointResult = (page, path, timeout = 15000) => new Promise((reso
         }
 
         try {
-            done(resolveResult, await response.json());
+            cleanup();
+            resolveResult(await response.json() as TestRecord);
         } catch (error) {
-            done(reject, error);
+            cleanup();
+            reject(error);
         }
     };
 
     timer = setTimeout(() => {
-        done(reject, new Error(`Timed out waiting for ${path}`));
+        cleanup();
+        reject(new Error(`Timed out waiting for ${path}`));
     }, timeout);
 
     page.on("response", handler);
@@ -159,7 +180,7 @@ describe.skipIf(!fixtureExists)("browser credential lifecycle", { timeout: TEST_
             .interact("submit seeded credentials", async ({ page }) => {
                 await submitLogin(page, fixture.user, [selectors.sessionPanel]);
             })
-            .assertPage("session panel contains the seeded user's email", currentSession, CTGTestPredicates.satisfies((session) => (
+            .assertPage("session panel contains the seeded user's email", currentSession, CTGTestPredicates.satisfies((session: BrowserSession) => (
                 session.visible === true &&
                 session.text.includes(fixture.user.email)
             )))
@@ -182,7 +203,7 @@ describe.skipIf(!fixtureExists)("browser credential lifecycle", { timeout: TEST_
             })
             .assertPage("login error shows service refusal", async (page) => {
                 return await errorText(page, selectors.loginError);
-            }, CTGTestPredicates.satisfies((text) => (
+            }, CTGTestPredicates.satisfies((text: string) => (
                 text.includes("SERVICE_ERROR") &&
                 text.length > "SERVICE_ERROR".length
             )))
@@ -208,7 +229,7 @@ describe.skipIf(!fixtureExists)("browser credential lifecycle", { timeout: TEST_
                 await page.locator(selectors.recoverButton).click();
                 await waitForAnyVisible(page, [selectors.sessionPanel]);
             })
-            .assertPage("session panel returns from cookie-backed recovery", currentSession, CTGTestPredicates.satisfies((session) => (
+            .assertPage("session panel returns from cookie-backed recovery", currentSession, CTGTestPredicates.satisfies((session: BrowserSession) => (
                 session.visible === true &&
                 session.text.includes(fixture.user.email)
             )))
@@ -219,23 +240,23 @@ describe.skipIf(!fixtureExists)("browser credential lifecycle", { timeout: TEST_
     }, TEST_TIMEOUT);
 
     it("Renew Now preserves the visible session and rotates the browser-visible access token", async () => {
-        let loginAccessToken = null;
-        let refreshAccessToken = null;
+        let loginAccessToken: string | null = null;
+        let refreshAccessToken: string | null = null;
 
         const state = await CTGBrowserTest.init("browser credential renew now")
             .navigate("open workbench", workbenchUrl)
             .interact("login and capture issued access token", async ({ page }) => {
                 const loginResult = waitForEndpointResult(page, "/auth/login");
                 await submitLogin(page, fixture.user, [selectors.sessionPanel]);
-                loginAccessToken = (await loginResult).result.access_token;
+                loginAccessToken = (await loginResult).result.access_token as string;
             })
             .interact("click renew now and capture renewed access token", async ({ page }) => {
                 const refreshResult = waitForEndpointResult(page, "/auth/refresh");
                 await page.locator(selectors.refreshButton).click();
                 await waitForAnyVisible(page, [selectors.sessionPanel]);
-                refreshAccessToken = (await refreshResult).result.access_token;
+                refreshAccessToken = (await refreshResult).result.access_token as string;
             })
-            .assertPage("session panel remains for the seeded user", currentSession, CTGTestPredicates.satisfies((session) => (
+            .assertPage("session panel remains for the seeded user", currentSession, CTGTestPredicates.satisfies((session: BrowserSession) => (
                 session.visible === true &&
                 session.text.includes(fixture.user.email) &&
                 session.details.Authenticated === "true"
@@ -269,7 +290,7 @@ describe.skipIf(!fixtureExists)("browser credential lifecycle", { timeout: TEST_
             })
             .assertPage("recovery refusal surfaces", async (page) => {
                 return await errorText(page, selectors.recoverError);
-            }, CTGTestPredicates.satisfies((text) => (
+            }, CTGTestPredicates.satisfies((text: string) => (
                 text.includes("AUTHENTICATION_REQUIRED") &&
                 text.length > "AUTHENTICATION_REQUIRED".length
             )))

@@ -6,9 +6,10 @@ import { act } from "react-dom/test-utils";
 import { describe, it, expect } from "vitest";
 import CTGReactTest from "ctg-react-test";
 import { CTGTestResult } from "ctg-js-test";
-import CTGUserClient from "../../src/core/CTGUserClient.js";
+import CTGUserbaseClient from "../../src/core/CTGUserbaseClient.js";
 import Authentication from "../../src/core/Authentication.js";
 import AccountManagement from "../../src/core/AccountManagement.js";
+import type { Claims } from "../../src/core/types.js";
 import UserbaseProvider from "../../src/react/UserbaseProvider.jsx";
 import RequirePermission from "../../src/react/RequirePermission.jsx";
 import usePermission from "../../src/react/usePermission.js";
@@ -17,20 +18,20 @@ import FixedClock from "../support/FixedClock.js";
 
 const S = CTGTestResult.STATUS;
 
-const success = (result) => ({
+const success = (result: unknown) => ({
     status: 200,
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ success: true, result })
 });
 
-const failure = (status, result) => ({
+const failure = (status: number, result: unknown) => ({
     status,
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ success: false, result })
 });
 
-const tokenFor = (claims) => {
-    const encode = (value) => Buffer.from(JSON.stringify(value)).toString("base64url");
+const tokenFor = (claims: TestClaims) => {
+    const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url");
     return `${encode({ alg: "none" })}.${encode(claims)}.signature`;
 };
 
@@ -38,26 +39,30 @@ const profile = { id: "u1", email: "a@example.test", name: null, roles: [], grou
 const C = { permissions: ["users:read"], scoped_permissions: ["users:update"], group_ids: [1, 2], exp: 2000 };
 const noRead = { permissions: [], scoped_permissions: ["users:update"], group_ids: [1, 2], exp: 3000 };
 
-const authenticated = (claims) => ({
+const authenticated = (claims: TestClaims & { exp: number }) => ({
     mfa_required: false,
     user: profile,
     access_token: tokenFor(claims),
     access_expires_at: claims.exp
 });
 
-const makeClient = (script) => {
+const makeClient = (script: TestScriptEntry[]) => {
     const transport = ScriptedTransport.init(script);
-    const client = new CTGUserClient({ base_url: "https://s", transport, clock: FixedClock.init(1000) });
+    const client = new CTGUserbaseClient({ base_url: "https://s", transport, clock: FixedClock.init(1000) });
     return { client, transport, auth: Authentication.init(client), account: AccountManagement.init(client) };
 };
 
-class ErrorBoundary extends React.Component {
-    constructor(props) {
+interface ErrorBoundaryState {
+    error: TestErrorShape | null;
+}
+
+class ErrorBoundary extends React.Component<{ children: React.ReactNode }, ErrorBoundaryState> {
+    constructor(props: { children: React.ReactNode }) {
         super(props);
         this.state = { error: null };
     }
 
-    static getDerivedStateFromError(error) {
+    static getDerivedStateFromError(error: TestErrorShape): ErrorBoundaryState {
         return { error };
     }
 
@@ -70,12 +75,18 @@ class ErrorBoundary extends React.Component {
     }
 }
 
-const PermissionProbe = ({ permission, targetGroupIds, id = "permission" }) => {
+interface PermissionProbeProps {
+    permission: string;
+    targetGroupIds?: number[];
+    id?: string;
+}
+
+const PermissionProbe = ({ permission, targetGroupIds, id = "permission" }: PermissionProbeProps) => {
     const allowed = usePermission(permission, targetGroupIds);
     return <output data-testid={id}>{allowed ? "true" : "false"}</output>;
 };
 
-const ProtectedOperationProbe = ({ account }) => {
+const ProtectedOperationProbe = ({ account }: { account: AccountManagement }) => {
     const [outcome, setOutcome] = useState("idle");
     return (
         <>
@@ -84,7 +95,8 @@ const ProtectedOperationProbe = ({ account }) => {
                     await account.getProfile();
                     setOutcome("success");
                 } catch (error) {
-                    setOutcome(`${error.type}:${error.service_type}:${error.status}`);
+                    const clientError = error as TestErrorShape;
+                    setOutcome(`${clientError.type}:${clientError.service_type}:${clientError.status}`);
                 }
             }}>run protected</button>
             <output data-testid="operation">{outcome}</output>

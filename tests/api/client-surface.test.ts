@@ -2,11 +2,12 @@
 
 import { describe, it, expect } from "vitest";
 import { CTGTest, CTGTestPredicates, CTGTestResult } from "ctg-js-test";
-import CTGUserClient from "../../src/core/CTGUserClient.js";
+import CTGUserbaseClient from "../../src/core/CTGUserbaseClient.js";
 import Authentication from "../../src/core/Authentication.js";
 import AccountManagement from "../../src/core/AccountManagement.js";
 import Administration from "../../src/core/Administration.js";
 import Authorization from "../../src/core/Authorization.js";
+import type { Authenticated } from "../../src/core/types.js";
 import ScriptedTransport from "../support/ScriptedTransport.js";
 import FixedClock from "../support/FixedClock.js";
 
@@ -17,20 +18,20 @@ const accountOperations = ["getProfile", "updateProfile", "changePassword", "req
 const adminOperations = ["bootstrapAdmin", "adminListUsers", "adminGetUser", "adminCreateUser", "adminUpdateUser", "adminDeleteUser", "listRoles", "createRole", "updateRole", "deleteRole", "listPermissions", "createPermission", "updatePermission", "deletePermission", "listGroups", "getGroup", "createGroup", "updateGroup", "deleteGroup", "addGroupMember", "removeGroupMember"];
 const authorizationOperations = ["hasPermission", "hasPermissionInAnyForm", "hasPermissionOver"];
 
-const success = (result) => ({
+const success = (result: unknown) => ({
     status: 200,
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ success: true, result })
 });
 
-const failure = (status, result) => ({
+const failure = (status: number, result: unknown) => ({
     status,
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ success: false, result })
 });
 
-const tokenFor = (claims) => {
-    const encode = (value) => Buffer.from(JSON.stringify(value)).toString("base64url");
+const tokenFor = (claims: TestClaims) => {
+    const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url");
     return `${encode({ alg: "none" })}.${encode(claims)}.signature`;
 };
 
@@ -39,24 +40,24 @@ const role = { name: "administrator", permissions: ["users:read"], scoped: false
 const oldToken = tokenFor({ sub: "u1", exp: 1000 });
 const newToken = tokenFor({ sub: "u1", exp: 3000 });
 
-const authenticated = (token) => ({
+const authenticated = (token: string): Authenticated => ({
     mfa_required: false,
     user: profile,
     access_token: token,
     access_expires_at: 3000
 });
 
-const clientFor = (script) => {
+const clientFor = (script: TestScriptEntry[]) => {
     const transport = ScriptedTransport.init(script);
-    const client = new CTGUserClient({ base_url: "https://s", transport, clock: FixedClock.init(1000) });
+    const client = new CTGUserbaseClient({ base_url: "https://s", transport, clock: FixedClock.init(1000) });
     return { client, transport };
 };
 
-const operationNames = (object) => {
-    const names = new Set();
+const operationNames = (object: object): string[] => {
+    const names = new Set<string>();
     for (let current = object; current !== null && current !== Object.prototype; current = Object.getPrototypeOf(current)) {
         for (const name of Object.getOwnPropertyNames(current)) {
-            if (name !== "constructor" && typeof object[name] === "function") {
+            if (name !== "constructor" && typeof Reflect.get(object, name) === "function") {
                 names.add(name);
             }
         }
@@ -64,23 +65,26 @@ const operationNames = (object) => {
     return [...names].sort();
 };
 
-const collectClientSurface = (client) => ({
-    request: typeof client.request,
-    session: typeof client.session,
-    subscribe: typeof client.subscribe,
-    isSessionActive: typeof client.isSessionActive,
-    authentication: client.authentication,
-    accountManagement: client.accountManagement,
-    administration: client.administration,
-    authorization: client.authorization
-});
+const collectClientSurface = (client: CTGUserbaseClient) => {
+    const extra = client as CTGUserbaseClient & Partial<Record<"authentication" | "accountManagement" | "administration" | "authorization", unknown>>;
+    return {
+        request: typeof client.request,
+        session: typeof client.session,
+        subscribe: typeof client.subscribe,
+        isSessionActive: typeof client.isSessionActive,
+        authentication: extra.authentication,
+        accountManagement: extra.accountManagement,
+        administration: extra.administration,
+        authorization: extra.authorization
+    };
+};
 
-const rejectValue = async (promise) => {
+const rejectValue = async (promise: TestPromise): Promise<TestErrorShape | null> => {
     try {
         await promise;
         return null;
     } catch (error) {
-        return error;
+        return error as TestErrorShape;
     }
 };
 
@@ -89,7 +93,7 @@ describe("core client surface and category application conformance", () => {
     it("client has fixed surface and no authentication, accountManagement, administration, or authorization property", async () => {
         const state = await CTGTest.init("client fixed surface")
             .stage("construct", () => collectClientSurface(clientFor([]).client))
-            .assert("surface", (state) => state.subject, CTGTestPredicates.equals({
+            .assert("surface", (state) => state.subject, CTGTestPredicates.equals<unknown>({
                 request: "function",
                 session: "function",
                 subscribe: "function",
@@ -99,7 +103,7 @@ describe("core client surface and category application conformance", () => {
                 administration: undefined,
                 authorization: undefined
             }))
-            .start();
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -119,10 +123,10 @@ describe("core client surface and category application conformance", () => {
                     admin: operationNames(admin),
                     authorization: operationNames(Authorization.init()),
                     duplicateCount,
-                    clientOps: allServiceOps.filter((name) => typeof client[name] === "function")
+                    clientOps: allServiceOps.filter((name) => typeof Reflect.get(client, name) === "function")
                 };
             })
-            .assert("category surfaces", (state) => state.subject, CTGTestPredicates.equals({
+            .assert("category surfaces", (state) => state.subject, CTGTestPredicates.equals<unknown>({
                 auth: [...authOperations].sort(),
                 account: [...accountOperations].sort(),
                 admin: [...adminOperations].sort(),
@@ -130,7 +134,7 @@ describe("core client surface and category application conformance", () => {
                 duplicateCount: 0,
                 clientOps: []
             }))
-            .start();
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -139,10 +143,10 @@ describe("core client surface and category application conformance", () => {
         const state = await CTGTest.init("category operation behavior")
             .stage("act", async () => {
                 const { client, transport } = clientFor([{ response: success(authenticated(oldToken)) }]);
-                const result = await Authentication.init(client).login({ email: "a@example.test", password: "p" });
+                const result = await Authentication.init(client).login({ email: "a@example.test", password: "p" }) as Authenticated;
                 return {
                     result,
-                    request: transport.requests()[0],
+                    request: transport.requestAt(0),
                     sessionToken: client.session().access_token
                 };
             })
@@ -152,14 +156,14 @@ describe("core client surface and category application conformance", () => {
                 authorization: state.subject.request.headers?.Authorization,
                 resultToken: state.subject.result.access_token,
                 sessionToken: state.subject.sessionToken
-            }), CTGTestPredicates.equals({
+            }), CTGTestPredicates.equals<unknown>({
                 url: "https://s/auth/login",
                 method: "POST",
                 authorization: undefined,
                 resultToken: oldToken,
                 sessionToken: oldToken
             }))
-            .start();
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -179,8 +183,8 @@ describe("core client surface and category application conformance", () => {
                 return { afterLogin, afterLogout: client.session() };
             })
             .assert("shared session", (state) => state.subject,
-                CTGTestPredicates.equals({ afterLogin: oldToken, afterLogout: { access_token: null, claims: null } }))
-            .start();
+                CTGTestPredicates.equals<unknown>({ afterLogin: oldToken, afterLogout: { access_token: null, claims: null } }))
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -190,14 +194,14 @@ describe("core client surface and category application conformance", () => {
             .stage("act", async () => {
                 const transport = ScriptedTransport.init([{ response: success(authenticated(oldToken)) }]);
                 const config = { base_url: "https://s", transport, clock: FixedClock.init(1000) };
-                const clientA = new CTGUserClient(config);
-                const clientB = new CTGUserClient(config);
+                const clientA = new CTGUserbaseClient(config);
+                const clientB = new CTGUserbaseClient(config);
                 await Authentication.init(clientA).login({ email: "a@example.test", password: "p" });
                 return { a: clientA.session().access_token, b: clientB.session() };
             })
             .assert("client B unchanged", (state) => state.subject,
-                CTGTestPredicates.equals({ a: oldToken, b: { access_token: null, claims: null } }))
-            .start();
+                CTGTestPredicates.equals<unknown>({ a: oldToken, b: { access_token: null, claims: null } }))
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -211,10 +215,10 @@ describe("core client surface and category application conformance", () => {
                 ]);
                 await Authentication.init(client).login({ email: "a@example.test", password: "p" });
                 await AccountManagement.init(client).getProfile();
-                return transport.requests()[1].headers?.Authorization;
+                return transport.requestAt(1).headers?.Authorization;
             })
-            .assert("new token carried", (state) => state.subject, CTGTestPredicates.equals(`Bearer ${oldToken}`))
-            .start();
+            .assert("new token carried", (state) => state.subject, CTGTestPredicates.equals<unknown>(`Bearer ${oldToken}`))
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -242,14 +246,14 @@ describe("core client surface and category application conformance", () => {
                     rolesResult
                 };
             })
-            .assert("single shared renewal", (state) => state.subject, CTGTestPredicates.equals({
+            .assert("single shared renewal", (state) => state.subject, CTGTestPredicates.equals<unknown>({
                 count: 5,
                 urls: ["https://s/me", "https://s/admin/roles", "https://s/auth/refresh", "https://s/me", "https://s/admin/roles"],
                 replayAuthorization: [`Bearer ${newToken}`, `Bearer ${newToken}`],
                 profileResult: profile,
                 rolesResult: [role]
             }))
-            .start();
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -264,11 +268,11 @@ describe("core client surface and category application conformance", () => {
                 await Authentication.init(client).login({ email: "a@example.test", password: "p" });
                 const group = { current: () => client.request("GET", "/app/current", undefined, undefined, "session") };
                 const result = await group.current();
-                return { result, authorization: transport.requests()[1].headers?.Authorization };
+                return { result, authorization: transport.requestAt(1).headers?.Authorization };
             })
             .assert("group uses session token", (state) => state.subject,
-                CTGTestPredicates.equals({ result: { ok: true }, authorization: `Bearer ${oldToken}` }))
-            .start();
+                CTGTestPredicates.equals<unknown>({ result: { ok: true }, authorization: `Bearer ${oldToken}` }))
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -290,18 +294,18 @@ describe("core client surface and category application conformance", () => {
                     result,
                     count: requests.length,
                     urls: requests.map((request) => request.url),
-                    replayAuthorization: requests[2].headers?.Authorization,
+                    replayAuthorization: transport.requestAt(before + 2).headers?.Authorization,
                     sessionToken: client.session().access_token
                 };
             })
-            .assert("group renewal", (state) => state.subject, CTGTestPredicates.equals({
+            .assert("group renewal", (state) => state.subject, CTGTestPredicates.equals<unknown>({
                 result: { ok: true },
                 count: 3,
                 urls: ["https://s/app/current", "https://s/auth/refresh", "https://s/app/current"],
                 replayAuthorization: `Bearer ${newToken}`,
                 sessionToken: newToken
             }))
-            .start();
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -312,17 +316,17 @@ describe("core client surface and category application conformance", () => {
                 const transportA = ScriptedTransport.init([{ response: success(authenticated(oldToken)) }]);
                 const transportB = ScriptedTransport.init([]);
                 const clock = FixedClock.init(1000);
-                const clientA = new CTGUserClient({ base_url: "https://s", transport: transportA, clock });
-                const clientB = new CTGUserClient({ base_url: "https://s", transport: transportB, clock });
+                const clientA = new CTGUserbaseClient({ base_url: "https://s", transport: transportA, clock });
+                const clientB = new CTGUserbaseClient({ base_url: "https://s", transport: transportB, clock });
                 await Authentication.init(clientA).login({ email: "a@example.test", password: "p" });
                 return { clientA: clientA.session().access_token, clientB: clientB.session(), bRequests: transportB.requests().length };
             })
-            .assert("B untouched", (state) => state.subject, CTGTestPredicates.equals({
+            .assert("B untouched", (state) => state.subject, CTGTestPredicates.equals<unknown>({
                 clientA: oldToken,
                 clientB: { access_token: null, claims: null },
                 bRequests: 0
             }))
-            .start();
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -332,13 +336,13 @@ describe("core client surface and category application conformance", () => {
             .stage("construct", () => {
                 const { client } = clientFor([]);
                 return {
-                    authorizationProperty: client.authorization,
-                    reachable: authorizationOperations.filter((name) => typeof client[name] === "function")
+                    authorizationProperty: Reflect.get(client, "authorization"),
+                    reachable: authorizationOperations.filter((name) => typeof Reflect.get(client, name) === "function")
                 };
             })
             .assert("not on client", (state) => state.subject,
-                CTGTestPredicates.equals({ authorizationProperty: undefined, reachable: [] }))
-            .start();
+                CTGTestPredicates.equals<unknown>({ authorizationProperty: undefined, reachable: [] }))
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });

@@ -2,27 +2,27 @@
 
 import { describe, it, expect } from "vitest";
 import { CTGTest, CTGTestPredicates, CTGTestResult } from "ctg-js-test";
-import CTGUserClient from "../../src/core/CTGUserClient.js";
+import CTGUserbaseClient from "../../src/core/CTGUserbaseClient.js";
 import Authentication from "../../src/core/Authentication.js";
 import ScriptedTransport from "../support/ScriptedTransport.js";
 import FixedClock from "../support/FixedClock.js";
 
 const { STATUS } = CTGTestResult;
 
-const success = (result) => ({
+const success = (result: unknown) => ({
     status: 200,
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ success: true, result })
 });
 
-const failure = (status, result) => ({
+const failure = (status: number, result: unknown) => ({
     status,
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ success: false, result })
 });
 
-const tokenFor = (claims) => {
-    const encode = (value) => Buffer.from(JSON.stringify(value)).toString("base64url");
+const tokenFor = (claims: TestClaims) => {
+    const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url");
     return `${encode({ alg: "none" })}.${encode(claims)}.signature`;
 };
 
@@ -51,13 +51,13 @@ const authenticated = {
     access_expires_at: 4000
 };
 
-const makeClient = (script) => {
+const makeClient = (script: TestScriptEntry[]) => {
     const transport = ScriptedTransport.init(script);
-    const client = new CTGUserClient({ base_url: "https://s", transport, clock: FixedClock.init(1000) });
+    const client = new CTGUserbaseClient({ base_url: "https://s", transport, clock: FixedClock.init(1000) });
     return { client, transport, auth: Authentication.init(client) };
 };
 
-const makeMFAClient = async (script) => {
+const makeMFAClient = async (script: TestScriptEntry[]) => {
     const setup = makeClient([
         { response: success(challenge) },
         ...script
@@ -66,7 +66,7 @@ const makeMFAClient = async (script) => {
     return setup;
 };
 
-const makeSessionAndMFAClient = async (script) => {
+const makeSessionAndMFAClient = async (script: TestScriptEntry[]) => {
     const setup = makeClient([
         { response: success(completedLogin) },
         { response: success(challenge) },
@@ -77,17 +77,17 @@ const makeSessionAndMFAClient = async (script) => {
     return setup;
 };
 
-const rejectValue = async (promise) => {
+const rejectValue = async (promise: TestPromise): Promise<TestErrorShape | null> => {
     try {
         await promise;
         return null;
     } catch (error) {
-        return error;
+        return error as TestErrorShape;
     }
 };
 
-const afterMFASeed = (transport) => transport.requests().slice(1);
-const afterSessionAndMFASeed = (transport) => transport.requests().slice(2);
+const afterMFASeed = (transport: TestScriptedTransport) => transport.requests().slice(1);
+const afterSessionAndMFASeed = (transport: TestScriptedTransport) => transport.requests().slice(2);
 
 describe("authentication second factor conformance", () => {
 
@@ -97,10 +97,10 @@ describe("authentication second factor conformance", () => {
                 const { client, auth, transport } = await makeMFAClient([
                     { response: success(authenticated) }
                 ]);
-                const seen = [];
+                const seen: unknown[] = [];
                 client.subscribe((session) => seen.push(session));
                 const result = await auth.verifyMFA({ mfa_token: challenge.mfa_token, code: "123456" });
-                const request = afterMFASeed(transport)[0];
+                const request = transport.requestAt(1);
                 return {
                     result,
                     request: {
@@ -113,7 +113,7 @@ describe("authentication second factor conformance", () => {
                     listenerCount: seen.length
                 };
             })
-            .assert("challenge token completed", (state) => state.subject, CTGTestPredicates.equals({
+            .assert("challenge token completed", (state) => state.subject, CTGTestPredicates.equals<unknown>({
                 result: authenticated,
                 request: {
                     method: "POST",
@@ -124,7 +124,7 @@ describe("authentication second factor conformance", () => {
                 session: { access_token: newToken, claims: newClaims },
                 listenerCount: 1
             }))
-            .start();
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -136,17 +136,17 @@ describe("authentication second factor conformance", () => {
                     { response: success(authenticated) }
                 ]);
                 await auth.verifyMFA({ mfa_token: challenge.mfa_token, code: "123456" });
-                const request = afterSessionAndMFASeed(transport)[0];
+                const request = transport.requestAt(2);
                 return {
                     authorization: request.headers?.Authorization,
                     body: request.body
                 };
             })
-            .assert("mfa token used", (state) => state.subject, CTGTestPredicates.equals({
+            .assert("mfa token used", (state) => state.subject, CTGTestPredicates.equals<unknown>({
                 authorization: `Bearer ${challenge.mfa_token}`,
                 body: JSON.stringify({ code: "123456" })
             }))
-            .start();
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -163,11 +163,11 @@ describe("authentication second factor conformance", () => {
                     count: afterMFASeed(transport).length
                 };
             })
-            .assert("not renewal eligible", (state) => state.subject, CTGTestPredicates.equals({
+            .assert("not renewal eligible", (state) => state.subject, CTGTestPredicates.equals<unknown>({
                 type: "AUTHENTICATION_REQUIRED",
                 count: 1
             }))
-            .start();
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -180,7 +180,7 @@ describe("authentication second factor conformance", () => {
                     { response: failure(422, fields) }
                 ]);
                 const error = await rejectValue(auth.verifyMFA({ mfa_token: challenge.mfa_token }));
-                const request = afterMFASeed(transport)[0];
+                const request = transport.requestAt(1);
                 return {
                     type: error?.type,
                     fields: error?.fields,
@@ -188,13 +188,13 @@ describe("authentication second factor conformance", () => {
                     body: request.body
                 };
             })
-            .assert("parameter failure surfaced", (state) => state.subject, CTGTestPredicates.equals({
+            .assert("parameter failure surfaced", (state) => state.subject, CTGTestPredicates.equals<unknown>({
                 type: "PARAMETER_REJECTED",
                 fields,
                 count: 1,
                 body: JSON.stringify({})
             }))
-            .start();
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });

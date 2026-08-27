@@ -2,32 +2,33 @@
 
 import { describe, it, expect } from "vitest";
 import { CTGTest, CTGTestPredicates, CTGTestResult } from "ctg-js-test";
-import CTGUserClient from "../../src/core/CTGUserClient.js";
+import CTGUserbaseClient from "../../src/core/CTGUserbaseClient.js";
 import Authentication from "../../src/core/Authentication.js";
+import type { Authenticated } from "../../src/core/types.js";
 import ScriptedTransport from "../support/ScriptedTransport.js";
 import FixedClock from "../support/FixedClock.js";
 
 const { STATUS } = CTGTestResult;
 
-const success = (result) => ({
+const success = (result: unknown) => ({
     status: 200,
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ success: true, result })
 });
 
-const failure = (status, result) => ({
+const failure = (status: number, result: unknown) => ({
     status,
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ success: false, result })
 });
 
-const tokenFor = (claims) => {
-    const encode = (value) => Buffer.from(JSON.stringify(value)).toString("base64url");
+const tokenFor = (claims: TestClaims) => {
+    const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url");
     return `${encode({ alg: "none" })}.${encode(claims)}.signature`;
 };
 
-const tokenWithClaimSegment = (claimSegment) => {
-    const encode = (value) => Buffer.from(JSON.stringify(value)).toString("base64url");
+const tokenWithClaimSegment = (claimSegment: string) => {
+    const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url");
     return `${encode({ alg: "none" })}.${claimSegment}.signature`;
 };
 
@@ -48,18 +49,18 @@ const challenge = {
     mfa_expires_at: 1200
 };
 
-const makeClient = (script) => {
+const makeClient = (script: TestScriptEntry[]) => {
     const transport = ScriptedTransport.init(script);
-    const client = new CTGUserClient({ base_url: "https://s", transport, clock: FixedClock.init(1000) });
+    const client = new CTGUserbaseClient({ base_url: "https://s", transport, clock: FixedClock.init(1000) });
     return { client, transport, auth: Authentication.init(client) };
 };
 
-const rejectValue = async (promise) => {
+const rejectValue = async (promise: TestPromise): Promise<TestErrorShape | null> => {
     try {
         await promise;
         return null;
     } catch (error) {
-        return error;
+        return error as TestErrorShape;
     }
 };
 
@@ -68,10 +69,10 @@ describe("authentication login conformance", () => {
     it("completed login returns the result, stores the token and decoded claims, and applies the listener once", async () => {
         const state = await CTGTest.init("login authenticated")
             .stage("act", async () => {
-                const seen = [];
+                const seen: unknown[] = [];
                 const { client, auth } = makeClient([{ response: success(authenticated()) }]);
                 client.subscribe((session) => seen.push(session));
-                const result = await auth.login({ email: "a@example.test", password: "p" });
+                const result = await auth.login({ email: "a@example.test", password: "p" }) as Authenticated;
                 return {
                     result,
                     session: client.session(),
@@ -79,13 +80,13 @@ describe("authentication login conformance", () => {
                     listenerSession: seen[0]
                 };
             })
-            .assert("session established", (state) => state.subject, CTGTestPredicates.equals({
+            .assert("session established", (state) => state.subject, CTGTestPredicates.equals<unknown>({
                 result: authenticated(),
                 session: { access_token: token, claims },
                 listenerCount: 1,
                 listenerSession: { access_token: token, claims }
             }))
-            .start();
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -93,18 +94,18 @@ describe("authentication login conformance", () => {
     it("MFA challenge login returns the challenge, leaves session unchanged, and applies no listener", async () => {
         const state = await CTGTest.init("login mfa challenge")
             .stage("act", async () => {
-                const seen = [];
+                const seen: unknown[] = [];
                 const { client, auth } = makeClient([{ response: success(challenge) }]);
                 client.subscribe((session) => seen.push(session));
                 const result = await auth.login({ email: "a@example.test", password: "p" });
                 return { result, session: client.session(), listenerCount: seen.length };
             })
-            .assert("challenge only", (state) => state.subject, CTGTestPredicates.equals({
+            .assert("challenge only", (state) => state.subject, CTGTestPredicates.equals<unknown>({
                 result: challenge,
                 session: { access_token: null, claims: null },
                 listenerCount: 0
             }))
-            .start();
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -113,19 +114,20 @@ describe("authentication login conformance", () => {
         const state = await CTGTest.init("login no refresh credential")
             .stage("act", async () => {
                 const { auth } = makeClient([{ response: success(authenticated()) }]);
-                const result = await auth.login({ email: "a@example.test", password: "p" });
+                const result = await auth.login({ email: "a@example.test", password: "p" }) as Authenticated;
+                const resultShape = result as Authenticated & { refresh_token?: unknown; refreshToken?: unknown };
                 return {
-                    refresh_token: result.refresh_token,
-                    refreshToken: result.refreshToken,
+                    refresh_token: resultShape.refresh_token,
+                    refreshToken: resultShape.refreshToken,
                     keys: Object.keys(result).sort()
                 };
             })
-            .assert("refresh credential absent", (state) => state.subject, CTGTestPredicates.equals({
+            .assert("refresh credential absent", (state) => state.subject, CTGTestPredicates.equals<unknown>({
                 refresh_token: undefined,
                 refreshToken: undefined,
                 keys: ["access_expires_at", "access_token", "mfa_required", "user"]
             }))
-            .start();
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -133,18 +135,18 @@ describe("authentication login conformance", () => {
     it("login answered with access_token \"abc\" rejects TOKEN_UNREADABLE, leaves session unchanged, and applies no listener", async () => {
         const state = await CTGTest.init("login unreadable compact token")
             .stage("act", async () => {
-                const seen = [];
+                const seen: unknown[] = [];
                 const { client, auth } = makeClient([{ response: success(authenticated("abc")) }]);
                 client.subscribe((session) => seen.push(session));
                 const error = await rejectValue(auth.login({ email: "a@example.test", password: "p" }));
                 return { type: error?.type, session: client.session(), listenerCount: seen.length };
             })
-            .assert("unreadable token rejected", (state) => state.subject, CTGTestPredicates.equals({
+            .assert("unreadable token rejected", (state) => state.subject, CTGTestPredicates.equals<unknown>({
                 type: "TOKEN_UNREADABLE",
                 session: { access_token: null, claims: null },
                 listenerCount: 0
             }))
-            .start();
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -158,8 +160,8 @@ describe("authentication login conformance", () => {
                 return error?.type;
             })
             .assert("non-map claim segment rejected", (state) => state.subject,
-                CTGTestPredicates.equals("TOKEN_UNREADABLE"))
-            .start();
+                CTGTestPredicates.equals<unknown>("TOKEN_UNREADABLE"))
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -178,13 +180,13 @@ describe("authentication login conformance", () => {
                     session: client.session()
                 };
             })
-            .assert("service failure surfaced", (state) => state.subject, CTGTestPredicates.equals({
+            .assert("service failure surfaced", (state) => state.subject, CTGTestPredicates.equals<unknown>({
                 type: "SERVICE_ERROR",
                 service_type: "INVALID_CREDENTIALS",
                 status: 403,
                 session: { access_token: null, claims: null }
             }))
-            .start();
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });

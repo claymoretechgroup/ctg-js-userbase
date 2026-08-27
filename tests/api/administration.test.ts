@@ -2,7 +2,7 @@
 
 import { describe, it, expect } from "vitest";
 import { CTGTest, CTGTestPredicates, CTGTestResult } from "ctg-js-test";
-import CTGUserClient from "../../src/core/CTGUserClient.js";
+import CTGUserbaseClient from "../../src/core/CTGUserbaseClient.js";
 import Authentication from "../../src/core/Authentication.js";
 import Administration from "../../src/core/Administration.js";
 import ScriptedTransport from "../support/ScriptedTransport.js";
@@ -10,13 +10,13 @@ import FixedClock from "../support/FixedClock.js";
 
 const { STATUS } = CTGTestResult;
 
-const success = (result, status = 200) => ({
+const success = (result: unknown, status = 200) => ({
     status,
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ success: true, result })
 });
 
-const failure = (status, result) => ({
+const failure = (status: number, result: unknown) => ({
     status,
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ success: false, result })
@@ -28,8 +28,8 @@ const noContent = () => ({
     body: ""
 });
 
-const tokenFor = (claims) => {
-    const encode = (value) => Buffer.from(JSON.stringify(value)).toString("base64url");
+const tokenFor = (claims: TestClaims) => {
+    const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url");
     return `${encode({ alg: "none" })}.${encode(claims)}.signature`;
 };
 
@@ -47,13 +47,13 @@ const authenticated = {
     access_expires_at: 3000
 };
 
-const makeClient = (script) => {
+const makeClient = (script: TestScriptEntry[]) => {
     const transport = ScriptedTransport.init(script);
-    const client = new CTGUserClient({ base_url: "https://s", transport, clock: FixedClock.init(1000) });
+    const client = new CTGUserbaseClient({ base_url: "https://s", transport, clock: FixedClock.init(1000) });
     return { client, transport, auth: Authentication.init(client), admin: Administration.init(client) };
 };
 
-const makeSeededClient = async (script) => {
+const makeSeededClient = async (script: TestScriptEntry[]) => {
     const setup = makeClient([
         { response: success(authenticated) },
         ...script
@@ -62,16 +62,16 @@ const makeSeededClient = async (script) => {
     return setup;
 };
 
-const rejectValue = async (promise) => {
+const rejectValue = async (promise: TestPromise): Promise<TestErrorShape | null> => {
     try {
         await promise;
         return null;
     } catch (error) {
-        return error;
+        return error as TestErrorShape;
     }
 };
 
-const afterSeed = (transport) => transport.requests().slice(1);
+const afterSeed = (transport: TestScriptedTransport) => transport.requests().slice(1);
 
 describe("administration conformance", () => {
 
@@ -83,8 +83,8 @@ describe("administration conformance", () => {
                 ]);
                 return await admin.adminCreateUser({ email: "b@example.test", password: "p" });
             })
-            .assert("created profile", (state) => state.subject, CTGTestPredicates.equals(createdProfile))
-            .start();
+            .assert("created profile", (state) => state.subject, CTGTestPredicates.equals<unknown>(createdProfile))
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -96,7 +96,7 @@ describe("administration conformance", () => {
                     { response: noContent() }
                 ]);
                 const result = await admin.adminDeleteUser({ id: "u2" });
-                const request = afterSeed(transport)[0];
+                const request = transport.requestAt(1);
                 return {
                     result,
                     request: {
@@ -107,7 +107,7 @@ describe("administration conformance", () => {
                     }
                 };
             })
-            .assert("void delete", (state) => state.subject, CTGTestPredicates.equals({
+            .assert("void delete", (state) => state.subject, CTGTestPredicates.equals<unknown>({
                 result: undefined,
                 request: {
                     method: "DELETE",
@@ -116,7 +116,7 @@ describe("administration conformance", () => {
                     body: null
                 }
             }))
-            .start();
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -128,17 +128,17 @@ describe("administration conformance", () => {
                     { response: success(role) }
                 ]);
                 await admin.updateRole({ name: "r", permissions: [], scoped: false });
-                const request = afterSeed(transport)[0];
+                const request = transport.requestAt(1);
                 return {
                     url: request.url,
                     body: request.body
                 };
             })
-            .assert("role request split", (state) => state.subject, CTGTestPredicates.equals({
+            .assert("role request split", (state) => state.subject, CTGTestPredicates.equals<unknown>({
                 url: "https://s/admin/role?name=r",
                 body: JSON.stringify({ permissions: [], scoped: false })
             }))
-            .start();
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -150,22 +150,25 @@ describe("administration conformance", () => {
                 const { admin, transport } = await makeSeededClient([
                     { response: failure(422, fields) }
                 ]);
-                const error = await rejectValue(admin.updateRole({ name: "r", permissions: [] }));
+                const error = await rejectValue(admin.updateRole(
+                    // @ts-expect-error missing scoped verifies runtime parameter rejection
+                    { name: "r", permissions: [] }
+                ));
                 const requests = afterSeed(transport);
                 return {
                     type: error?.type,
                     fields: error?.fields,
                     count: requests.length,
-                    body: requests[0].body
+                    body: transport.requestAt(1).body
                 };
             })
-            .assert("scoped absent", (state) => state.subject, CTGTestPredicates.equals({
+            .assert("scoped absent", (state) => state.subject, CTGTestPredicates.equals<unknown>({
                 type: "PARAMETER_REJECTED",
                 fields,
                 count: 1,
                 body: JSON.stringify({ permissions: [] })
             }))
-            .start();
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -177,17 +180,17 @@ describe("administration conformance", () => {
                     { response: success(group) }
                 ]);
                 await admin.updateGroup({ id: 3, name: "g" });
-                const request = afterSeed(transport)[0];
+                const request = transport.requestAt(1);
                 return {
                     url: request.url,
                     body: request.body
                 };
             })
-            .assert("group name only", (state) => state.subject, CTGTestPredicates.equals({
+            .assert("group name only", (state) => state.subject, CTGTestPredicates.equals<unknown>({
                 url: "https://s/admin/group?id=3",
                 body: JSON.stringify({ name: "g" })
             }))
-            .start();
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -199,11 +202,11 @@ describe("administration conformance", () => {
                     { response: success(group, 201) }
                 ]);
                 await admin.createGroup({ name: "g" });
-                return afterSeed(transport)[0].body;
+                return transport.requestAt(1).body;
             })
             .assert("group create body", (state) => state.subject,
-                CTGTestPredicates.equals(JSON.stringify({ name: "g" })))
-            .start();
+                CTGTestPredicates.equals<unknown>(JSON.stringify({ name: "g" })))
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -215,17 +218,17 @@ describe("administration conformance", () => {
                     { response: success(createdProfile, 201) }
                 ]);
                 await admin.bootstrapAdmin({ secret: "setup", email: "b@example.test", password: "p" });
-                const request = afterSeed(transport)[0];
+                const request = transport.requestAt(1);
                 return {
                     authorization: request.headers?.Authorization,
                     body: request.body
                 };
             })
-            .assert("setup secret credential", (state) => state.subject, CTGTestPredicates.equals({
+            .assert("setup secret credential", (state) => state.subject, CTGTestPredicates.equals<unknown>({
                 authorization: undefined,
                 body: JSON.stringify({ secret: "setup", email: "b@example.test", password: "p" })
             }))
-            .start();
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -243,12 +246,12 @@ describe("administration conformance", () => {
                     status: error?.status
                 };
             })
-            .assert("role not found surfaced", (state) => state.subject, CTGTestPredicates.equals({
+            .assert("role not found surfaced", (state) => state.subject, CTGTestPredicates.equals<unknown>({
                 type: "SERVICE_ERROR",
                 service_type: "ROLE_NOT_FOUND",
                 status: 404
             }))
-            .start();
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -266,12 +269,12 @@ describe("administration conformance", () => {
                     status: error?.status
                 };
             })
-            .assert("permission denial surfaced", (state) => state.subject, CTGTestPredicates.equals({
+            .assert("permission denial surfaced", (state) => state.subject, CTGTestPredicates.equals<unknown>({
                 type: "SERVICE_ERROR",
                 service_type: "PERMISSION_DENIED",
                 status: 403
             }))
-            .start();
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -283,11 +286,11 @@ describe("administration conformance", () => {
                     { response: success([profile]) }
                 ]);
                 await admin.adminListUsers({ offset: 20 });
-                return afterSeed(transport)[0].url;
+                return transport.requestAt(1).url;
             })
             .assert("limit omitted", (state) => state.subject,
-                CTGTestPredicates.equals("https://s/admin/users?offset=20"))
-            .start();
+                CTGTestPredicates.equals<unknown>("https://s/admin/users?offset=20"))
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });

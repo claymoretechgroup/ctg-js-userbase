@@ -2,47 +2,63 @@
 
 import { describe, it, expect } from "vitest";
 import { CTGTest, CTGTestPredicates, CTGTestResult } from "ctg-js-test";
-import CTGUserClient from "../../src/core/CTGUserClient.js";
+import CTGUserbaseClient from "../../src/core/CTGUserbaseClient.js";
 import Authentication from "../../src/core/Authentication.js";
+import type { Request } from "../../src/core/types.js";
 import ScriptedTransport from "../support/ScriptedTransport.js";
 import FixedClock from "../support/FixedClock.js";
 
 const { STATUS } = CTGTestResult;
 
-const success = (result) => ({
+const success = (result: unknown) => ({
     status: 200,
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ success: true, result })
 });
 
-const failure = (status, result) => ({
+const failure = (status: number, result: unknown) => ({
     status,
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ success: false, result })
 });
 
-const tokenFor = (claims) => {
-    const encode = (value) => Buffer.from(JSON.stringify(value)).toString("base64url");
+const tokenFor = (claims: TestClaims) => {
+    const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url");
     return `${encode({ alg: "none" })}.${encode(claims)}.signature`;
 };
 
 const profile = { id: "u1", email: "a@example.test", name: null, roles: [], group_ids: [], totp_enabled: false, email_verified: true };
 
-const clientWithSession = async (script) => {
+interface RequestSummary {
+    method: Request["method"];
+    url: string;
+    authorization: string | undefined;
+    accept: string | undefined;
+    hasContentType: boolean;
+    body: string | null;
+    credentials: Request["credentials"];
+}
+
+type RequestWithExpected = RequestSummary & {
+    expectedAuthorization: string;
+    count: number;
+};
+
+const clientWithSession = async (script: TestScriptEntry[]) => {
     const token = tokenFor({ sub: "u1", exp: 2000 });
     const transport = ScriptedTransport.init([
         { response: success({ mfa_required: false, user: profile, access_token: token, access_expires_at: 2000 }) },
         ...script
     ]);
-    const client = new CTGUserClient({ base_url: "https://s", transport, clock: FixedClock.init(1000) });
+    const client = new CTGUserbaseClient({ base_url: "https://s", transport, clock: FixedClock.init(1000) });
     await Authentication.init(client).login({ email: "a@example.test", password: "p" });
     return { client, transport, token };
 };
 
-const lastRequest = (transport) => transport.requests()[transport.requests().length - 1];
-const hasHeader = (request, name) => Object.hasOwn(request.headers ?? {}, name);
+const lastRequest = (transport: TestScriptedTransport) => transport.lastRequest();
+const hasHeader = (request: Request, name: string) => Object.hasOwn(request.headers ?? {}, name);
 
-const requestSummary = (request) => ({
+const requestSummary = (request: Request): RequestSummary => ({
     method: request.method,
     url: request.url,
     authorization: request.headers?.Authorization,
@@ -66,7 +82,7 @@ describe("core client request building conformance", () => {
                 ...state.subject.request,
                 expectedAuthorization: `Bearer ${state.subject.token}`,
                 count: state.subject.count
-            }), CTGTestPredicates.satisfies((value) => (
+            }), CTGTestPredicates.satisfies<RequestWithExpected>((value) => (
                 value.method === "GET" &&
                 value.url === "https://s/r" &&
                 value.authorization === value.expectedAuthorization &&
@@ -76,7 +92,7 @@ describe("core client request building conformance", () => {
                 value.credentials === "include" &&
                 value.count === 1
             )))
-            .start();
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -85,25 +101,25 @@ describe("core client request building conformance", () => {
         const state = await CTGTest.init("request without session credential")
             .stage("act", async () => {
                 const transport = ScriptedTransport.init([{ response: failure(401, "Authorization token required") }]);
-                const client = new CTGUserClient({ base_url: "https://s", transport, clock: FixedClock.init(1000) });
-                let error = null;
+                const client = new CTGUserbaseClient({ base_url: "https://s", transport, clock: FixedClock.init(1000) });
+                let error: TestErrorShape | null = null;
                 try {
                     await client.request("GET", "/r");
                 } catch (caught) {
-                    error = caught;
+                    error = caught as TestErrorShape;
                 }
                 return {
                     type: error?.type,
                     count: transport.requests().length,
-                    authorization: transport.requests()[0].headers?.Authorization
+                    authorization: transport.requestAt(0).headers?.Authorization
                 };
             })
-            .assert("not renewal eligible", (state) => state.subject, CTGTestPredicates.equals({
+            .assert("not renewal eligible", (state) => state.subject, CTGTestPredicates.equals<unknown>({
                 type: "AUTHENTICATION_REQUIRED",
                 count: 1,
                 authorization: undefined
             }))
-            .start();
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -115,8 +131,8 @@ describe("core client request building conformance", () => {
                 await client.request("GET", "/r", undefined, undefined, "none");
                 return lastRequest(transport).headers?.Authorization;
             })
-            .assert("authorization omitted", (state) => state.subject, CTGTestPredicates.equals(undefined))
-            .start();
+            .assert("authorization omitted", (state) => state.subject, CTGTestPredicates.equals<unknown>(undefined))
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -128,8 +144,8 @@ describe("core client request building conformance", () => {
                 await client.request("GET", "/r", undefined, undefined, "M");
                 return lastRequest(transport).headers?.Authorization;
             })
-            .assert("explicit bearer used", (state) => state.subject, CTGTestPredicates.equals("Bearer M"))
-            .start();
+            .assert("explicit bearer used", (state) => state.subject, CTGTestPredicates.equals<unknown>("Bearer M"))
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -138,12 +154,12 @@ describe("core client request building conformance", () => {
         const state = await CTGTest.init("request query order")
             .stage("act", async () => {
                 const transport = ScriptedTransport.init([{ response: success({ ok: true }) }]);
-                const client = new CTGUserClient({ base_url: "https://s", transport, clock: FixedClock.init(1000) });
+                const client = new CTGUserbaseClient({ base_url: "https://s", transport, clock: FixedClock.init(1000) });
                 await client.request("GET", "/r", { limit: 10, offset: 20 }, undefined, "none");
-                return transport.requests()[0].url;
+                return transport.requestAt(0).url;
             })
-            .assert("query ordered", (state) => state.subject, CTGTestPredicates.equals("https://s/r?limit=10&offset=20"))
-            .start();
+            .assert("query ordered", (state) => state.subject, CTGTestPredicates.equals<unknown>("https://s/r?limit=10&offset=20"))
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -152,12 +168,12 @@ describe("core client request building conformance", () => {
         const state = await CTGTest.init("request omits absent query")
             .stage("act", async () => {
                 const transport = ScriptedTransport.init([{ response: success({ ok: true }) }]);
-                const client = new CTGUserClient({ base_url: "https://s", transport, clock: FixedClock.init(1000) });
+                const client = new CTGUserbaseClient({ base_url: "https://s", transport, clock: FixedClock.init(1000) });
                 await client.request("GET", "/r", { offset: 20 }, undefined, "none");
-                return transport.requests()[0].url;
+                return transport.requestAt(0).url;
             })
-            .assert("only offset present", (state) => state.subject, CTGTestPredicates.equals("https://s/r?offset=20"))
-            .start();
+            .assert("only offset present", (state) => state.subject, CTGTestPredicates.equals<unknown>("https://s/r?offset=20"))
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -166,12 +182,12 @@ describe("core client request building conformance", () => {
         const state = await CTGTest.init("request empty query")
             .stage("act", async () => {
                 const transport = ScriptedTransport.init([{ response: success({ ok: true }) }]);
-                const client = new CTGUserClient({ base_url: "https://s", transport, clock: FixedClock.init(1000) });
+                const client = new CTGUserbaseClient({ base_url: "https://s", transport, clock: FixedClock.init(1000) });
                 await client.request("GET", "/r", {}, undefined, "none");
-                return transport.requests()[0].url;
+                return transport.requestAt(0).url;
             })
-            .assert("no query marker", (state) => state.subject, CTGTestPredicates.equals("https://s/r"))
-            .start();
+            .assert("no query marker", (state) => state.subject, CTGTestPredicates.equals<unknown>("https://s/r"))
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -180,12 +196,12 @@ describe("core client request building conformance", () => {
         const state = await CTGTest.init("request percent encoding")
             .stage("act", async () => {
                 const transport = ScriptedTransport.init([{ response: success({ ok: true }) }]);
-                const client = new CTGUserClient({ base_url: "https://s", transport, clock: FixedClock.init(1000) });
+                const client = new CTGUserbaseClient({ base_url: "https://s", transport, clock: FixedClock.init(1000) });
                 await client.request("GET", "/r", { id: "a b" }, undefined, "none");
-                return transport.requests()[0].url;
+                return transport.requestAt(0).url;
             })
-            .assert("encoded space", (state) => state.subject, CTGTestPredicates.equals("https://s/r?id=a%20b"))
-            .start();
+            .assert("encoded space", (state) => state.subject, CTGTestPredicates.equals<unknown>("https://s/r?id=a%20b"))
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -194,16 +210,16 @@ describe("core client request building conformance", () => {
         const state = await CTGTest.init("request JSON body")
             .stage("act", async () => {
                 const transport = ScriptedTransport.init([{ response: success({ ok: true }) }]);
-                const client = new CTGUserClient({ base_url: "https://s", transport, clock: FixedClock.init(1000) });
+                const client = new CTGUserbaseClient({ base_url: "https://s", transport, clock: FixedClock.init(1000) });
                 await client.request("POST", "/r", undefined, { name: "A" }, "none");
-                const request = transport.requests()[0];
+                const request = transport.requestAt(0);
                 return { contentType: request.headers?.["Content-Type"], body: request.body };
             })
-            .assert("body fields", (state) => state.subject, CTGTestPredicates.equals({
+            .assert("body fields", (state) => state.subject, CTGTestPredicates.equals<unknown>({
                 contentType: "application/json",
                 body: JSON.stringify({ name: "A" })
             }))
-            .start();
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -212,12 +228,12 @@ describe("core client request building conformance", () => {
         const state = await CTGTest.init("request empty JSON body")
             .stage("act", async () => {
                 const transport = ScriptedTransport.init([{ response: success({ ok: true }) }]);
-                const client = new CTGUserClient({ base_url: "https://s", transport, clock: FixedClock.init(1000) });
+                const client = new CTGUserbaseClient({ base_url: "https://s", transport, clock: FixedClock.init(1000) });
                 await client.request("POST", "/r", undefined, {}, "none");
-                return transport.requests()[0].body;
+                return transport.requestAt(0).body;
             })
-            .assert("empty JSON object", (state) => state.subject, CTGTestPredicates.equals("{}"))
-            .start();
+            .assert("empty JSON object", (state) => state.subject, CTGTestPredicates.equals<unknown>("{}"))
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -235,8 +251,8 @@ describe("core client request building conformance", () => {
                 await client.request("GET", "/r", undefined, undefined, "M");
                 return transport.requests().slice(1).map((request) => request.credentials);
             })
-            .assert("all credentials included", (state) => state.subject, CTGTestPredicates.equals(["include", "include", "include"]))
-            .start();
+            .assert("all credentials included", (state) => state.subject, CTGTestPredicates.equals<unknown>(["include", "include", "include"]))
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });

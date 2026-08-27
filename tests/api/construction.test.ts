@@ -2,7 +2,7 @@
 
 import { describe, it, expect } from "vitest";
 import { CTGTest, CTGTestPredicates, CTGTestResult } from "ctg-js-test";
-import CTGUserClient from "../../src/core/CTGUserClient.js";
+import CTGUserbaseClient from "../../src/core/CTGUserbaseClient.js";
 import AccountManagement from "../../src/core/AccountManagement.js";
 import Authentication from "../../src/core/Authentication.js";
 import ScriptedTransport from "../support/ScriptedTransport.js";
@@ -10,23 +10,23 @@ import FixedClock from "../support/FixedClock.js";
 
 const { STATUS } = CTGTestResult;
 
-const success = (result) => ({
+const success = (result: unknown) => ({
     status: 200,
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ success: true, result })
 });
 
-const errorFrom = (fn) => {
+const errorFrom = (fn: () => unknown): TestErrorShape | null => {
     try {
         fn();
         return null;
     } catch (error) {
-        return error;
+        return error as TestErrorShape;
     }
 };
 
-const tokenFor = (claims) => {
-    const encode = (value) => Buffer.from(JSON.stringify(value)).toString("base64url");
+const tokenFor = (claims: TestClaims) => {
+    const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url");
     return `${encode({ alg: "none" })}.${encode(claims)}.signature`;
 };
 
@@ -39,45 +39,52 @@ describe("core client construction conformance", () => {
         const state = await CTGTest.init("constructor accepted")
             .stage("construct", () => {
                 const transport = ScriptedTransport.init([]);
-                const client = new CTGUserClient({ base_url: "https://s", transport, clock: FixedClock.init(1000) });
+                const client = new CTGUserbaseClient({ base_url: "https://s", transport, clock: FixedClock.init(1000) });
                 return { client, transport };
             })
             .assert("client shape and zero requests", (state) => ({
-                hasClient: state.subject.client instanceof CTGUserClient,
+                hasClient: state.subject.client instanceof CTGUserbaseClient,
                 requestCount: state.subject.transport.requests().length
-            }), CTGTestPredicates.equals({ hasClient: true, requestCount: 0 }))
-            .start();
+            }), CTGTestPredicates.equals<unknown>({ hasClient: true, requestCount: 0 }))
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
 
     it("constructor without transport is rejected with CONFIGURATION_INVALID for transport", async () => {
         const state = await CTGTest.init("constructor missing transport")
-            .stage("construct", () => errorFrom(() => new CTGUserClient({ base_url: "https://s", clock: FixedClock.init(1000) })))
+            .stage("construct", () => errorFrom(() =>
+                // @ts-expect-error missing transport verifies configuration validation
+                new CTGUserbaseClient({ base_url: "https://s", clock: FixedClock.init(1000) })
+            ))
             .assert("transport field error", (state) => ({
                 type: state.subject?.type,
                 field: state.subject?.details?.field
-            }), CTGTestPredicates.equals({ type: "CONFIGURATION_INVALID", field: "transport" }))
-            .start();
+            }), CTGTestPredicates.equals<unknown>({ type: "CONFIGURATION_INVALID", field: "transport" }))
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
 
     it("constructor without clock is rejected with CONFIGURATION_INVALID for clock", async () => {
         const state = await CTGTest.init("constructor missing clock")
-            .stage("construct", () => errorFrom(() => new CTGUserClient({ base_url: "https://s", transport: ScriptedTransport.init([]) })))
+            .stage("construct", () => errorFrom(() =>
+                // @ts-expect-error missing clock verifies configuration validation
+                new CTGUserbaseClient({ base_url: "https://s", transport: ScriptedTransport.init([]) })
+            ))
             .assert("clock field error", (state) => ({
                 type: state.subject?.type,
                 field: state.subject?.details?.field
-            }), CTGTestPredicates.equals({ type: "CONFIGURATION_INVALID", field: "clock" }))
-            .start();
+            }), CTGTestPredicates.equals<unknown>({ type: "CONFIGURATION_INVALID", field: "clock" }))
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
 
     it("constructor with non-string base_url is rejected with CONFIGURATION_INVALID for base_url", async () => {
         const state = await CTGTest.init("constructor invalid base_url")
-            .stage("construct", () => errorFrom(() => new CTGUserClient({
+            .stage("construct", () => errorFrom(() => new CTGUserbaseClient({
+                // @ts-expect-error non-string base_url verifies configuration validation
                 base_url: 7,
                 transport: ScriptedTransport.init([]),
                 clock: FixedClock.init(1000)
@@ -85,8 +92,8 @@ describe("core client construction conformance", () => {
             .assert("base_url field error", (state) => ({
                 type: state.subject?.type,
                 field: state.subject?.details?.field
-            }), CTGTestPredicates.equals({ type: "CONFIGURATION_INVALID", field: "base_url" }))
-            .start();
+            }), CTGTestPredicates.equals<unknown>({ type: "CONFIGURATION_INVALID", field: "base_url" }))
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -97,12 +104,12 @@ describe("core client construction conformance", () => {
                 const transport = ScriptedTransport.init([
                     { response: success(profile) }
                 ]);
-                const client = new CTGUserClient({ transport, clock: FixedClock.init(1000) });
+                const client = new CTGUserbaseClient({ transport, clock: FixedClock.init(1000) });
                 await AccountManagement.init(client).getProfile();
-                return transport.requests()[0].url;
+                return transport.requestAt(0).url;
             })
-            .assert("url is path only", (state) => state.subject, CTGTestPredicates.equals("/me"))
-            .start();
+            .assert("url is path only", (state) => state.subject, CTGTestPredicates.equals<unknown>("/me"))
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -113,12 +120,12 @@ describe("core client construction conformance", () => {
                 const transport = ScriptedTransport.init([
                     { response: success(profile) }
                 ]);
-                const client = new CTGUserClient({ base_url: "https://s/", transport, clock: FixedClock.init(1000) });
+                const client = new CTGUserbaseClient({ base_url: "https://s/", transport, clock: FixedClock.init(1000) });
                 await AccountManagement.init(client).getProfile();
-                return transport.requests()[0].url;
+                return transport.requestAt(0).url;
             })
-            .assert("url has one slash before /me", (state) => state.subject, CTGTestPredicates.equals("https://s/me"))
-            .start();
+            .assert("url has one slash before /me", (state) => state.subject, CTGTestPredicates.equals<unknown>("https://s/me"))
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });
@@ -131,13 +138,13 @@ describe("core client construction conformance", () => {
                     { response: success({ mfa_required: false, user: profile, access_token: token, access_expires_at: 2000 }) }
                 ]);
                 const clock = FixedClock.init(1000);
-                const clientA = new CTGUserClient({ base_url: "https://s", transport, clock });
+                const clientA = new CTGUserbaseClient({ base_url: "https://s", transport, clock });
                 await Authentication.init(clientA).login({ email: "a@example.test", password: "p" });
-                const clientB = new CTGUserClient({ base_url: "https://s", transport: ScriptedTransport.init([]), clock });
+                const clientB = new CTGUserbaseClient({ base_url: "https://s", transport: ScriptedTransport.init([]), clock });
                 return clientB.session();
             })
-            .assert("second client session empty", (state) => state.subject, CTGTestPredicates.equals({ access_token: null, claims: null }))
-            .start();
+            .assert("second client session empty", (state) => state.subject, CTGTestPredicates.equals<unknown>({ access_token: null, claims: null }))
+            .start(undefined);
 
         expect(state.status).toBe(STATUS.PASS);
     });

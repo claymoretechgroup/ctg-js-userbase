@@ -6,8 +6,9 @@ import { act } from "react-dom/test-utils";
 import { describe, it, expect } from "vitest";
 import CTGReactTest from "ctg-react-test";
 import { CTGTestResult } from "ctg-js-test";
-import CTGUserClient from "../../src/core/CTGUserClient.js";
+import CTGUserbaseClient from "../../src/core/CTGUserbaseClient.js";
 import Authentication from "../../src/core/Authentication.js";
+import type { SessionState } from "../../src/core/types.js";
 import UserbaseProvider from "../../src/react/UserbaseProvider.jsx";
 import useUserbase from "../../src/react/useUserbase.js";
 import ScriptedTransport from "../support/ScriptedTransport.js";
@@ -15,39 +16,43 @@ import FixedClock from "../support/FixedClock.js";
 
 const S = CTGTestResult.STATUS;
 
-const success = (result) => ({
+const success = (result: unknown) => ({
     status: 200,
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ success: true, result })
 });
 
-const tokenFor = (claims) => {
-    const encode = (value) => Buffer.from(JSON.stringify(value)).toString("base64url");
+const tokenFor = (claims: TestClaims) => {
+    const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url");
     return `${encode({ alg: "none" })}.${encode(claims)}.signature`;
 };
 
 const profile = { id: "u1", email: "a@example.test", name: null, roles: [], group_ids: [], totp_enabled: false, email_verified: true };
 
-const authenticated = (claims) => ({
+const authenticated = (claims: TestClaims & { exp: number }) => ({
     mfa_required: false,
     user: profile,
     access_token: tokenFor(claims),
     access_expires_at: claims.exp
 });
 
-const makeClient = (script, now = 1000) => {
+const makeClient = (script: TestScriptEntry[], now = 1000) => {
     const transport = ScriptedTransport.init(script);
-    const client = new CTGUserClient({ base_url: "https://s", transport, clock: FixedClock.init(now) });
+    const client = new CTGUserbaseClient({ base_url: "https://s", transport, clock: FixedClock.init(now) });
     return { client, transport, auth: Authentication.init(client) };
 };
 
-class ErrorBoundary extends React.Component {
-    constructor(props) {
+interface ErrorBoundaryState {
+    error: TestErrorShape | null;
+}
+
+class ErrorBoundary extends React.Component<{ children: React.ReactNode }, ErrorBoundaryState> {
+    constructor(props: { children: React.ReactNode }) {
         super(props);
         this.state = { error: null };
     }
 
-    static getDerivedStateFromError(error) {
+    static getDerivedStateFromError(error: TestErrorShape): ErrorBoundaryState {
         return { error };
     }
 
@@ -60,7 +65,12 @@ class ErrorBoundary extends React.Component {
     }
 }
 
-const SessionProbe = ({ id = "session", expectedClient = null }) => {
+interface SessionProbeProps {
+    id?: string;
+    expectedClient?: CTGUserbaseClient | null;
+}
+
+const SessionProbe = ({ id = "session", expectedClient = null }: SessionProbeProps) => {
     const exposure = useUserbase();
     return (
         <output data-testid={id}>
@@ -89,7 +99,14 @@ describe("react provider and session exposure conformance", () => {
     it("UserbaseProvider given no client throws CONFIGURATION_INVALID with details.field client", async () => {
         const state = await CTGReactTest.init("provider requires client")
             .assertComponent("configuration error", (screen) => screen.getByTestId("error").textContent, "CONFIGURATION_INVALID:client")
-            .start(<ErrorBoundary><UserbaseProvider><span>content</span></UserbaseProvider></ErrorBoundary>);
+            .start(
+                <ErrorBoundary>
+                    {
+                        // @ts-expect-error missing client verifies provider configuration error
+                        <UserbaseProvider><span>content</span></UserbaseProvider>
+                    }
+                </ErrorBoundary>
+            );
 
         expect(state.status).toBe(S.PASS);
     });
