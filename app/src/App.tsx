@@ -1,7 +1,55 @@
-import { useState } from "react";
-import { RequireSession, useOperation, useUserbase } from "ctg-js-userbase";
+import { useState, type ChangeEventHandler, type FormEventHandler, type MouseEventHandler } from "react";
+import {
+    RequireSession,
+    useOperation,
+    useUserbase,
+    type Authenticated,
+    type Authentication,
+    type ClientError,
+    type ForgotPasswordArgs,
+    type LoginArgs,
+    type LoginResult,
+    type Operation,
+    type Profile,
+    type RegisterArgs
+} from "ctg-js-userbase";
 
-const formatValue = (value) => {
+type ProfileHandler = (profile: Profile) => void;
+type RegisterResult = Awaited<ReturnType<Authentication["register"]>>;
+type ForgotPasswordResult = Awaited<ReturnType<Authentication["forgotPassword"]>>;
+type LogoutResult = Awaited<ReturnType<Authentication["logout"]>>;
+
+interface AuthProps {
+    auth: Authentication;
+}
+
+interface ClientErrorViewProps {
+    id: string;
+    error: ClientError | null;
+}
+
+interface OperationStatusProps<Result extends { readonly status?: unknown }> {
+    operation: {
+        readonly error: ClientError | null;
+        readonly result: Result | null;
+    };
+    successLabel: string;
+}
+
+interface LoginFormProps extends AuthProps {
+    onProfile: ProfileHandler;
+}
+
+interface SignedOutViewProps extends AuthProps {
+    onProfile: ProfileHandler;
+}
+
+interface SessionPanelProps extends AuthProps {
+    profile: Profile | null;
+    onProfile: ProfileHandler;
+}
+
+const formatValue = (value: unknown): string => {
     if (value === undefined) {
         return "not present";
     }
@@ -15,13 +63,13 @@ const formatValue = (value) => {
     }
 
     if (typeof value === "object") {
-        return JSON.stringify(value);
+        return JSON.stringify(value) ?? String(value);
     }
 
     return String(value);
 };
 
-function ClientErrorView({ id, error }) {
+function ClientErrorView({ id, error }: ClientErrorViewProps) {
     if (error === null) {
         return null;
     }
@@ -37,7 +85,7 @@ function ClientErrorView({ id, error }) {
     );
 }
 
-function OperationStatus({ operation, successLabel }) {
+function OperationStatus<Result extends { readonly status?: unknown }>({ operation, successLabel }: OperationStatusProps<Result>) {
     if (operation.error !== null) {
         return null;
     }
@@ -50,24 +98,35 @@ function OperationStatus({ operation, successLabel }) {
 }
 
 // Wraps an Authenticated-returning operation so the Profile it carries is
-// lifted into App state before any gate unmounts the calling component
+// lifted into App state before a gate unmounts the calling component
 // (claims carry no email; the result's user is the only profile source).
-const liftingProfile = (operation, onProfile) => async (args) => {
+const hasProfile = (result: object): result is { readonly user: Profile } => (
+    "user" in result && result.user !== undefined
+);
+
+const liftingProfile = <Args, Result extends object>(
+    operation: Operation<Args, Result>,
+    onProfile: ProfileHandler
+): Operation<Args, Result> => async (args) => {
     const result = await operation(args);
-    if (result?.user !== undefined && onProfile) {
+    if (hasProfile(result)) {
         onProfile(result.user);
     }
     return result;
 };
 
-function LoginForm({ auth, onProfile }) {
+function LoginForm({ auth, onProfile }: LoginFormProps) {
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
-    const login = useOperation(liftingProfile((args) => auth.login(args), onProfile));
+    const login = useOperation<LoginArgs, LoginResult>(
+        liftingProfile<LoginArgs, LoginResult>((args) => auth.login(args), onProfile)
+    );
 
-    const submit = (event) => {
+    const updateEmail: ChangeEventHandler<HTMLInputElement> = (event) => setEmail(event.target.value);
+    const updatePassword: ChangeEventHandler<HTMLInputElement> = (event) => setPassword(event.target.value);
+    const submit: FormEventHandler<HTMLFormElement> = (event) => {
         event.preventDefault();
-        login.run({ email, password });
+        void login.run({ email, password });
     };
 
     return (
@@ -80,7 +139,7 @@ function LoginForm({ auth, onProfile }) {
                     type="email"
                     autoComplete="email"
                     value={email}
-                    onChange={(event) => setEmail(event.target.value)}
+                    onChange={updateEmail}
                     required
                 />
 
@@ -90,7 +149,7 @@ function LoginForm({ auth, onProfile }) {
                     type="password"
                     autoComplete="current-password"
                     value={password}
-                    onChange={(event) => setPassword(event.target.value)}
+                    onChange={updatePassword}
                     required
                 />
 
@@ -108,14 +167,16 @@ function LoginForm({ auth, onProfile }) {
     );
 }
 
-function RegisterForm({ auth }) {
+function RegisterForm({ auth }: AuthProps) {
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
-    const register = useOperation((args) => auth.register(args));
+    const register = useOperation<RegisterArgs, RegisterResult>((args) => auth.register(args));
 
-    const submit = (event) => {
+    const updateEmail: ChangeEventHandler<HTMLInputElement> = (event) => setEmail(event.target.value);
+    const updatePassword: ChangeEventHandler<HTMLInputElement> = (event) => setPassword(event.target.value);
+    const submit: FormEventHandler<HTMLFormElement> = (event) => {
         event.preventDefault();
-        register.run({ email, password });
+        void register.run({ email, password });
     };
 
     return (
@@ -128,7 +189,7 @@ function RegisterForm({ auth }) {
                     type="email"
                     autoComplete="email"
                     value={email}
-                    onChange={(event) => setEmail(event.target.value)}
+                    onChange={updateEmail}
                     required
                 />
 
@@ -138,7 +199,7 @@ function RegisterForm({ auth }) {
                     type="password"
                     autoComplete="new-password"
                     value={password}
-                    onChange={(event) => setPassword(event.target.value)}
+                    onChange={updatePassword}
                     required
                 />
 
@@ -152,13 +213,14 @@ function RegisterForm({ auth }) {
     );
 }
 
-function ForgotPasswordForm({ auth }) {
+function ForgotPasswordForm({ auth }: AuthProps) {
     const [email, setEmail] = useState("");
-    const forgot = useOperation((args) => auth.forgotPassword(args));
+    const forgot = useOperation<ForgotPasswordArgs, ForgotPasswordResult>((args) => auth.forgotPassword(args));
 
-    const submit = (event) => {
+    const updateEmail: ChangeEventHandler<HTMLInputElement> = (event) => setEmail(event.target.value);
+    const submit: FormEventHandler<HTMLFormElement> = (event) => {
         event.preventDefault();
-        forgot.run({ email });
+        void forgot.run({ email });
     };
 
     return (
@@ -171,7 +233,7 @@ function ForgotPasswordForm({ auth }) {
                     type="email"
                     autoComplete="email"
                     value={email}
-                    onChange={(event) => setEmail(event.target.value)}
+                    onChange={updateEmail}
                     required
                 />
 
@@ -185,8 +247,13 @@ function ForgotPasswordForm({ auth }) {
     );
 }
 
-function SignedOutView({ auth, onProfile }) {
-    const recover = useOperation(liftingProfile(() => auth.refresh(), onProfile));
+function SignedOutView({ auth, onProfile }: SignedOutViewProps) {
+    const recover = useOperation<void, Authenticated>(
+        liftingProfile<void, Authenticated>(() => auth.refresh(), onProfile)
+    );
+    const recoverSession: MouseEventHandler<HTMLButtonElement> = () => {
+        void recover.run(undefined);
+    };
 
     return (
         <main>
@@ -196,7 +263,7 @@ function SignedOutView({ auth, onProfile }) {
             </header>
 
             <section className="toolbar">
-                <button id="recover-button" type="button" disabled={recover.pending} onClick={() => recover.run()}>
+                <button id="recover-button" type="button" disabled={recover.pending} onClick={recoverSession}>
                     {recover.pending ? "Recovering..." : "Recover Session"}
                 </button>
                 <a href="/dev/mailbox.php">Staging Inbox</a>
@@ -214,11 +281,19 @@ function SignedOutView({ auth, onProfile }) {
     );
 }
 
-function SessionPanel({ auth, profile, onProfile }) {
+function SessionPanel({ auth, profile, onProfile }: SessionPanelProps) {
     const { client, session, authenticated } = useUserbase();
-    const refresh = useOperation(liftingProfile(() => auth.refresh(), onProfile));
-    const logout = useOperation(() => auth.logout());
-    const claims = session.claims ?? {};
+    const refresh = useOperation<void, Authenticated>(
+        liftingProfile<void, Authenticated>(() => auth.refresh(), onProfile)
+    );
+    const logout = useOperation<void, LogoutResult>(() => auth.logout());
+    const claims = session.claims;
+    const refreshNow: MouseEventHandler<HTMLButtonElement> = () => {
+        void refresh.run(undefined);
+    };
+    const logoutNow: MouseEventHandler<HTMLButtonElement> = () => {
+        void logout.run(undefined);
+    };
 
     return (
         <main>
@@ -232,7 +307,7 @@ function SessionPanel({ auth, profile, onProfile }) {
                 <dl>
                     <div>
                         <dt>Email</dt>
-                        <dd>{formatValue(profile?.email ?? claims.sub)}</dd>
+                        <dd>{formatValue(profile?.email ?? claims?.sub)}</dd>
                     </div>
                     <div>
                         <dt>Authenticated</dt>
@@ -244,19 +319,19 @@ function SessionPanel({ auth, profile, onProfile }) {
                     </div>
                     <div>
                         <dt>Permissions</dt>
-                        <dd>{formatValue(claims.permissions)}</dd>
+                        <dd>{formatValue(claims?.permissions)}</dd>
                     </div>
                     <div>
                         <dt>Expires</dt>
-                        <dd>{formatValue(claims.exp)}</dd>
+                        <dd>{formatValue(claims?.exp)}</dd>
                     </div>
                 </dl>
 
                 <div className="actions">
-                    <button id="refresh-button" type="button" disabled={refresh.pending} onClick={() => refresh.run()}>
+                    <button id="refresh-button" type="button" disabled={refresh.pending} onClick={refreshNow}>
                         {refresh.pending ? "Renewing..." : "Renew Now"}
                     </button>
-                    <button id="logout-button" type="button" disabled={logout.pending} onClick={() => logout.run()}>
+                    <button id="logout-button" type="button" disabled={logout.pending} onClick={logoutNow}>
                         {logout.pending ? "Logging out..." : "Logout"}
                     </button>
                 </div>
@@ -267,8 +342,8 @@ function SessionPanel({ auth, profile, onProfile }) {
     );
 }
 
-export default function App({ auth }) {
-    const [profile, setProfile] = useState(null);
+export default function App({ auth }: AuthProps) {
+    const [profile, setProfile] = useState<Profile | null>(null);
     return (
         <RequireSession fallback={<SignedOutView auth={auth} onProfile={setProfile} />}>
             <SessionPanel auth={auth} profile={profile} onProfile={setProfile} />
