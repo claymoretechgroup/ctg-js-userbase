@@ -91,7 +91,7 @@ Phase 1 (client machinery, authentication without MFA, authorization, presentati
 - [ ] **Phase 4 — Administration**: live suite for `endpoints/04` (bootstrap acceptance cases), workbench admin screens
 - [ ] **Cross-origin scenario**: Vite dev server against staging CORS, and the cross-origin renewal-limit browser case
 - [ ] Move the spec's service pin forward when `ctg-php-userbase` publishes the wire-discriminant fix
-- [ ] **TypeScript conversion** (ruled: TypeScript throughout): `src/`, all four test suites, and the workbench convert to TypeScript; the api suites move to `ctg-ts-test` (its first consumer); the 221-case suite stays the contract — green before and after; repo rename to `ctg-ts-userbase` pending
+- [ ] **TypeScript conversion** (ruled: TypeScript throughout): `src/`, all four test suites, and the workbench convert to TypeScript; the test frameworks stay ctg-js-test / ctg-react-test / ctg-js-browser-test, consumed through their shipped declarations; the 221-case suite stays the contract — green before and after
 - [ ] Usage guides beyond this README; 1.0 versioning decision once all phases gate green
 
 ## License
